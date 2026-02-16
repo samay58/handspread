@@ -1,6 +1,6 @@
 """Tests for operating efficiency metrics."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from handspread.analysis.operating import compute_operating
@@ -8,26 +8,42 @@ from handspread.models import ComputedValue, MarketSnapshot, MarketValue
 
 
 def _cited(value, metric="test"):
+    """Stub CitedValue via SimpleNamespace (only .value is read by operating)."""
     return SimpleNamespace(value=value, metric=metric)
 
 
 def _make_snapshot(price=100.0, shares=1_000_000):
-    now = datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 1, 15, 12, 0, tzinfo=UTC)
     p = MarketValue(
-        metric="price", value=price, unit="USD",
-        vendor="finnhub", symbol="TEST", endpoint="quote", fetched_at=now,
+        metric="price",
+        value=price,
+        unit="USD",
+        vendor="finnhub",
+        symbol="TEST",
+        endpoint="quote",
+        fetched_at=now,
     )
     s = MarketValue(
-        metric="shares_outstanding", value=shares, unit="shares",
-        vendor="finnhub", symbol="TEST", endpoint="profile", fetched_at=now,
+        metric="shares_outstanding",
+        value=shares,
+        unit="shares",
+        vendor="finnhub",
+        symbol="TEST",
+        endpoint="profile",
+        fetched_at=now,
     )
     mcap = ComputedValue(
-        metric="market_cap", value=price * shares, unit="USD",
+        metric="market_cap",
+        value=price * shares,
+        unit="USD",
         formula="price * shares_outstanding",
     )
     return MarketSnapshot(
-        symbol="TEST", company_name="Test Corp",
-        price=p, shares_outstanding=s, market_cap=mcap,
+        symbol="TEST",
+        company_name="Test Corp",
+        price=p,
+        shares_outstanding=s,
+        market_cap=mcap,
     )
 
 
@@ -92,3 +108,25 @@ class TestROIC:
         }
         result = compute_operating(sec)
         assert "roic" not in result
+
+
+class TestZeroInvestedCapital:
+    def test_zero_invested_capital_skips_roic(self):
+        """invested_capital = 0 should skip ROIC to avoid division by zero."""
+        sec = {
+            "revenue": _cited(10_000_000),
+            "operating_income": _cited(2_000_000),
+            "total_debt": _cited(0),
+            "stockholders_equity": _cited(0),
+        }
+        result = compute_operating(sec)
+        assert "roic" not in result
+
+
+class TestZeroSharesSkipsRevenuePerShare:
+    def test_zero_shares_skips_revenue_per_share(self):
+        """shares = 0 should skip revenue_per_share."""
+        sec = {"revenue": _cited(10_000_000)}
+        market = _make_snapshot(price=100.0, shares=0)
+        result = compute_operating(sec, market)
+        assert "revenue_per_share" not in result

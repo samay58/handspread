@@ -6,6 +6,7 @@ from handspread.analysis.growth import compute_growth
 
 
 def _cited(value):
+    """Stub CitedValue with .value attribute for growth series tests."""
     return SimpleNamespace(value=value)
 
 
@@ -64,3 +65,23 @@ class TestNegativePrior:
 
         assert result["revenue_yoy"].value is None
         assert any("zero" in w for w in result["revenue_yoy"].warnings)
+
+
+class TestNegativeToNegativeTransition:
+    def test_negative_to_negative(self):
+        """Both years negative: (-10 - (-20)) / abs(-20) = 10/20 = 0.5."""
+        metrics = {"net_income": [_cited(-10), _cited(-20)]}
+        result = compute_growth(metrics)
+
+        assert abs(result["net_income_yoy"].value - 0.5) < 0.001
+        assert any("negative" in w for w in result["net_income_yoy"].warnings)
+
+
+class TestThreeYearSeriesUsesFirstTwo:
+    def test_three_year_series(self):
+        """Series length 3: only [0] and [1] used for YoY growth."""
+        metrics = {"revenue": [_cited(300), _cited(200), _cited(100)]}
+        result = compute_growth(metrics)
+
+        # Growth = (300 - 200) / 200 = 0.5
+        assert abs(result["revenue_yoy"].value - 0.5) < 0.001

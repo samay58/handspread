@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import finnhub
 
@@ -14,6 +14,7 @@ from ..models import ComputedValue, MarketSnapshot, MarketValue
 # Module-level cache: (endpoint, symbol) -> (fetched_epoch, payload)
 _cache: dict[tuple[str, str], tuple[float, dict]] = {}
 _semaphore: asyncio.Semaphore | None = None
+_client: finnhub.Client | None = None
 
 
 def _get_semaphore() -> asyncio.Semaphore:
@@ -24,13 +25,16 @@ def _get_semaphore() -> asyncio.Semaphore:
 
 
 def _get_client() -> finnhub.Client:
-    return finnhub.Client(api_key=get_settings().finnhub_api_key)
+    global _client
+    if _client is None:
+        _client = finnhub.Client(api_key=get_settings().finnhub_api_key)
+    return _client
 
 
-async def _call_in_thread(fn, *args):
+async def _call_in_thread(fn, *args, **kwargs):
     """Run a sync Finnhub call in a thread, respecting the concurrency semaphore."""
     async with _get_semaphore():
-        return await asyncio.to_thread(fn, *args)
+        return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 def _cache_get(endpoint: str, symbol: str) -> dict | None:
@@ -78,7 +82,7 @@ async def _fetch_profile(client: finnhub.Client, symbol: str) -> dict:
 async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
     """Fetch current price, shares outstanding, and market cap for a ticker."""
     client = _get_client()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     store_raw = get_settings().store_raw_market_payload
 
     quote_data, metric_data, profile_data = await asyncio.gather(
@@ -96,7 +100,7 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         vendor="finnhub",
         symbol=symbol,
         endpoint="quote",
-        as_of=datetime.fromtimestamp(quote_data.get("t", 0), tz=timezone.utc)
+        as_of=datetime.fromtimestamp(quote_data.get("t", 0), tz=UTC)
         if quote_data.get("t")
         else None,
         fetched_at=now,
@@ -108,6 +112,12 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
     so_warnings: list[str] = []
     so_notes: list[str] = []
 
+    if so_raw is not None and so_raw <= 0:
+        so_warnings.append(
+            f"Negative or zero shares outstanding from profile ({so_raw}); treated as None"
+        )
+        so_raw = None
+
     if so_raw is not None:
         # Finnhub profile returns shares in millions
         shares_value = so_raw * 1_000_000
@@ -118,9 +128,7 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         so_raw = metric_values.get("shareOutstanding") or metric_values.get("sharesOutstanding")
         if so_raw is not None and so_raw < 1_000_000:
             shares_value = so_raw * 1_000_000
-            so_notes.append(
-                f"Raw value {so_raw} < 1M, treated as millions, multiplied by 1e6"
-            )
+            so_notes.append(f"Raw value {so_raw} < 1M, treated as millions, multiplied by 1e6")
         else:
             shares_value = so_raw
         if so_raw is None:
@@ -181,5 +189,7 @@ async def fetch_market_snapshots(
 
 
 def clear_cache() -> None:
-    """Clear the in-memory TTL cache. Useful for testing."""
+    """Clear the in-memory TTL cache and client. Useful for testing."""
+    global _client
     _cache.clear()
+    _client = None

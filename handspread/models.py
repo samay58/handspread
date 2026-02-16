@@ -9,11 +9,10 @@ Every number in a CompanyAnalysis traces back to either:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
+from edgarpack.query.models import CitedValue, QueryResult
 from pydantic import BaseModel, Field
-
-from edgarpack.query.models import CitedValue, DerivedValue, QueryResult
 
 
 class MarketValue(BaseModel):
@@ -66,10 +65,10 @@ class MarketSnapshot(BaseModel):
 class EVPolicy(BaseModel):
     """Configuration for enterprise value bridge construction."""
 
-    cash_treatment: str = "subtract"  # "subtract" or "ignore"
+    cash_treatment: Literal["subtract", "ignore"] = "subtract"
     include_leases: bool = False
     subtract_equity_method_investments: bool = False
-    debt_mode: str = "total_only"  # "total_only", "split", "total_plus_short"
+    debt_mode: Literal["total_only", "split", "total_plus_short"] = "total_only"
 
 
 class EVBridge(BaseModel):

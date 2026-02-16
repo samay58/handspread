@@ -5,17 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue, MarketSnapshot
-
-
-def _extract_value(sec_metrics: dict[str, Any], key: str) -> tuple[float | None, Any]:
-    cv = sec_metrics.get(key)
-    if cv is None:
-        return None, None
-    if isinstance(cv, list):
-        cv = cv[0] if cv else None
-    if cv is None:
-        return None, None
-    return cv.value, cv
+from ._utils import extract_sec_value
 
 
 def _pct_of_revenue(
@@ -26,7 +16,7 @@ def _pct_of_revenue(
     rev_src: Any,
 ) -> ComputedValue | None:
     """Compute a metric as a percentage of revenue."""
-    num_val, num_src = _extract_value(sec_metrics, numerator_key)
+    num_val, num_src = extract_sec_value(sec_metrics, numerator_key)
     if num_val is None or rev_val is None or rev_val == 0:
         return None
 
@@ -45,7 +35,7 @@ def compute_operating(
 ) -> dict[str, ComputedValue]:
     """Compute operating efficiency metrics."""
     result: dict[str, ComputedValue] = {}
-    rev_val, rev_src = _extract_value(sec_metrics, "revenue")
+    rev_val, rev_src = extract_sec_value(sec_metrics, "revenue")
 
     # R&D as % of revenue
     cv = _pct_of_revenue(sec_metrics, "rd_expense", "rd_pct_revenue", rev_val, rev_src)
@@ -75,9 +65,9 @@ def compute_operating(
             )
 
     # ROIC approximation: operating_income * (1 - tax_rate) / (total_debt + stockholders_equity)
-    oi_val, oi_src = _extract_value(sec_metrics, "operating_income")
-    debt_val, debt_src = _extract_value(sec_metrics, "total_debt")
-    eq_val, eq_src = _extract_value(sec_metrics, "stockholders_equity")
+    oi_val, oi_src = extract_sec_value(sec_metrics, "operating_income")
+    debt_val, debt_src = extract_sec_value(sec_metrics, "total_debt")
+    eq_val, eq_src = extract_sec_value(sec_metrics, "stockholders_equity")
 
     if oi_val is not None and debt_val is not None and eq_val is not None:
         invested_capital = debt_val + eq_val

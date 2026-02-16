@@ -2,12 +2,11 @@
 
 Comparable company analysis engine with full provenance chains. Every number traces back to its source: SEC EDGAR filings (via edgarpack) or market data vendor (Finnhub).
 
-## Install
+## Quickstart
 
 ```bash
-# From the handspread directory
-uv pip install -e "../edgarpack"
-uv pip install -e ".[dev]"
+uv pip install -e "../edgarpack" && uv pip install -e ".[dev]"
+FINNHUB_API_KEY=<your-key> EDGARPACK_USER_AGENT="Name email@co.com" python examples/run_comps.py
 ```
 
 ## Environment Variables
@@ -62,3 +61,5 @@ Three concurrent data streams feed into per-company analysis:
 3. **Finnhub market data** - price, shares outstanding, market cap
 
 Each company gets: EV bridge, valuation multiples, growth rates, operating efficiency metrics.
+
+All timestamps in the output are UTC.

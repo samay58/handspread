@@ -1,6 +1,6 @@
 """Tests for core data models."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from handspread.models import ComputedValue, MarketSnapshot, MarketValue
 
@@ -13,7 +13,7 @@ def _make_market_value(**overrides):
         "vendor": "finnhub",
         "symbol": "TEST",
         "endpoint": "quote",
-        "fetched_at": datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc),
+        "fetched_at": datetime(2025, 1, 15, 12, 0, tzinfo=UTC),
     }
     defaults.update(overrides)
     return MarketValue(**defaults)
@@ -58,9 +58,7 @@ class TestComputedValue:
 class TestMarketSnapshot:
     def test_market_cap_computation(self):
         price = _make_market_value(metric="price", value=150.0)
-        shares = _make_market_value(
-            metric="shares_outstanding", value=1_000_000, unit="shares"
-        )
+        shares = _make_market_value(metric="shares_outstanding", value=1_000_000, unit="shares")
         mcap = ComputedValue(
             metric="market_cap",
             value=150.0 * 1_000_000,
@@ -79,9 +77,7 @@ class TestMarketSnapshot:
 
     def test_market_cap_none_when_price_missing(self):
         price = _make_market_value(metric="price", value=None)
-        shares = _make_market_value(
-            metric="shares_outstanding", value=1_000_000, unit="shares"
-        )
+        shares = _make_market_value(metric="shares_outstanding", value=1_000_000, unit="shares")
         mcap = ComputedValue(
             metric="market_cap",
             value=None,

@@ -4,23 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from edgarpack.query.models import CitedValue
-
 from ..models import ComputedValue, EVBridge, EVPolicy, MarketSnapshot
-
-
-def _get_sec_value(
-    sec_metrics: dict[str, Any], key: str
-) -> tuple[float | None, CitedValue | None]:
-    """Extract a numeric value and its CitedValue from sec_metrics."""
-    cv = sec_metrics.get(key)
-    if cv is None:
-        return None, None
-    if isinstance(cv, list):
-        cv = cv[0] if cv else None
-    if cv is None:
-        return None, None
-    return cv.value, cv
+from ._utils import extract_sec_value
 
 
 def build_ev_bridge(
@@ -65,8 +50,8 @@ def build_ev_bridge(
     components: dict[str, Any] = {"equity_value": bridge.equity_value}
 
     # Debt handling based on policy
-    debt_val, debt_cv = _get_sec_value(sec_metrics, "total_debt")
-    short_debt_val, short_debt_cv = _get_sec_value(sec_metrics, "short_term_debt")
+    debt_val, debt_cv = extract_sec_value(sec_metrics, "total_debt")
+    short_debt_val, short_debt_cv = extract_sec_value(sec_metrics, "short_term_debt")
 
     if policy.debt_mode == "total_only":
         if debt_val is not None:
@@ -103,9 +88,12 @@ def build_ev_bridge(
             components["short_term_debt"] = short_debt_cv
             bridge.short_term_debt = short_debt_cv
 
+    # Extract cash and marketable securities (used in both EV calc and net debt)
+    cash_val, cash_cv = extract_sec_value(sec_metrics, "cash")
+    ms_val, ms_cv = extract_sec_value(sec_metrics, "marketable_securities")
+
     # Cash subtraction
     if policy.cash_treatment == "subtract":
-        cash_val, cash_cv = _get_sec_value(sec_metrics, "cash")
         if cash_val is not None:
             ev -= cash_val
             formula_parts.append("- cash")
@@ -114,8 +102,6 @@ def build_ev_bridge(
         else:
             warnings.append("cash missing, treated as 0")
 
-        # Marketable securities
-        ms_val, ms_cv = _get_sec_value(sec_metrics, "marketable_securities")
         if ms_val is not None:
             ev -= ms_val
             formula_parts.append("- marketable_securities")
@@ -124,7 +110,7 @@ def build_ev_bridge(
 
     # Operating lease liabilities
     if policy.include_leases:
-        lease_val, lease_cv = _get_sec_value(sec_metrics, "operating_lease_liabilities")
+        lease_val, lease_cv = extract_sec_value(sec_metrics, "operating_lease_liabilities")
         if lease_val is not None:
             ev += lease_val
             formula_parts.append("+ operating_lease_liabilities")
@@ -134,7 +120,7 @@ def build_ev_bridge(
             warnings.append("operating_lease_liabilities requested but missing")
 
     # Preferred stock
-    pref_val, pref_cv = _get_sec_value(sec_metrics, "preferred_stock")
+    pref_val, pref_cv = extract_sec_value(sec_metrics, "preferred_stock")
     if pref_val is not None:
         ev += pref_val
         formula_parts.append("+ preferred_stock")
@@ -142,7 +128,7 @@ def build_ev_bridge(
         bridge.preferred_stock = pref_cv
 
     # Noncontrolling interests
-    nci_val, nci_cv = _get_sec_value(sec_metrics, "noncontrolling_interests")
+    nci_val, nci_cv = extract_sec_value(sec_metrics, "noncontrolling_interests")
     if nci_val is not None:
         ev += nci_val
         formula_parts.append("+ noncontrolling_interests")
@@ -151,26 +137,24 @@ def build_ev_bridge(
 
     # Equity method investments
     if policy.subtract_equity_method_investments:
-        emi_val, emi_cv = _get_sec_value(sec_metrics, "equity_method_investments")
+        emi_val, emi_cv = extract_sec_value(sec_metrics, "equity_method_investments")
         if emi_val is not None:
             ev -= emi_val
             formula_parts.append("- equity_method_investments")
             components["equity_method_investments"] = emi_cv
             bridge.equity_method_investments = emi_cv
 
-    # Net debt
+    # Net debt (reuses cash_val and ms_val extracted above)
     debt_total = 0.0
     cash_total = 0.0
     if debt_val is not None:
         debt_total += debt_val
     if short_debt_val is not None and policy.debt_mode != "total_only":
         debt_total += short_debt_val
-    cash_val_for_net, _ = _get_sec_value(sec_metrics, "cash")
-    if cash_val_for_net is not None:
-        cash_total += cash_val_for_net
-    ms_val_for_net, _ = _get_sec_value(sec_metrics, "marketable_securities")
-    if ms_val_for_net is not None:
-        cash_total += ms_val_for_net
+    if cash_val is not None:
+        cash_total += cash_val
+    if ms_val is not None:
+        cash_total += ms_val
 
     bridge.net_debt = ComputedValue(
         metric="net_debt",

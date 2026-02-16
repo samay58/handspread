@@ -1,6 +1,6 @@
 """Tests for valuation multiples computation."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from handspread.analysis.multiples import compute_multiples
@@ -8,6 +8,7 @@ from handspread.models import ComputedValue, EVBridge, MarketSnapshot, MarketVal
 
 
 def _cited(value, metric="test"):
+    """Stub CitedValue via SimpleNamespace (only .value is read by multiples)."""
     return SimpleNamespace(value=value, metric=metric)
 
 
@@ -23,23 +24,38 @@ def _make_ev_bridge(ev_value):
 
 
 def _make_snapshot(price=100.0, shares=1_000_000):
-    now = datetime(2025, 1, 15, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2025, 1, 15, 12, 0, tzinfo=UTC)
     p = MarketValue(
-        metric="price", value=price, unit="USD",
-        vendor="finnhub", symbol="TEST", endpoint="quote", fetched_at=now,
+        metric="price",
+        value=price,
+        unit="USD",
+        vendor="finnhub",
+        symbol="TEST",
+        endpoint="quote",
+        fetched_at=now,
     )
     s = MarketValue(
-        metric="shares_outstanding", value=shares, unit="shares",
-        vendor="finnhub", symbol="TEST", endpoint="profile", fetched_at=now,
+        metric="shares_outstanding",
+        value=shares,
+        unit="shares",
+        vendor="finnhub",
+        symbol="TEST",
+        endpoint="profile",
+        fetched_at=now,
     )
     mcap_val = price * shares if price and shares else None
     mcap = ComputedValue(
-        metric="market_cap", value=mcap_val, unit="USD",
+        metric="market_cap",
+        value=mcap_val,
+        unit="USD",
         formula="price * shares_outstanding",
     )
     return MarketSnapshot(
-        symbol="TEST", company_name="Test Corp",
-        price=p, shares_outstanding=s, market_cap=mcap,
+        symbol="TEST",
+        company_name="Test Corp",
+        price=p,
+        shares_outstanding=s,
+        market_cap=mcap,
     )
 
 
@@ -106,3 +122,30 @@ class TestEquityMultiples:
         result = compute_multiples(bridge, market, sec)
         expected = 2.0 / 50.0  # 0.04
         assert abs(result["dividend_yield"].value - expected) < 0.001
+
+
+class TestNegativeNetIncomePE:
+    def test_negative_net_income_pe(self):
+        """Negative NI produces a negative P/E with warning about negative denominator."""
+        bridge = _make_ev_bridge(10_000_000_000)
+        market = _make_snapshot(price=100.0, shares=1_000_000)
+        sec = {"net_income": _cited(-5_000_000)}
+
+        result = compute_multiples(bridge, market, sec)
+        # mcap = 100M, NI = -5M, P/E = -20x
+        assert result["pe"].value is not None
+        assert result["pe"].value < 0
+        assert any("Negative denominator" in w for w in result["pe"].warnings)
+
+
+class TestNoneEVProducesNoneMultiples:
+    def test_none_ev_produces_none_multiples(self):
+        """EVBridge with None EV produces None for all EV-based multiples."""
+        bridge = _make_ev_bridge(None)
+        market = _make_snapshot(price=100.0, shares=1_000_000)
+        sec = {"revenue": _cited(1_000_000)}
+
+        result = compute_multiples(bridge, market, sec)
+        assert result["ev_revenue"].value is None
+        assert result["ev_ebitda"].value is None
+        assert any("Numerator unavailable" in w for w in result["ev_revenue"].warnings)

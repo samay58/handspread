@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from edgarpack.query import comps
 from edgarpack.query.models import QueryResult
@@ -58,6 +58,7 @@ async def analyze_comps(
     tickers: list[str],
     period: str = "ltm",
     ev_policy: EVPolicy | None = None,
+    timeout: float = 60.0,
 ) -> list[CompanyAnalysis]:
     """Run full comparable company analysis across tickers.
 
@@ -69,15 +70,19 @@ async def analyze_comps(
     Returns one CompanyAnalysis per ticker. Failures are isolated per-company
     and recorded in the errors list rather than raising.
     """
-    valuation_ts = datetime.now(timezone.utc)
+    valuation_ts = datetime.now(UTC)
 
     sec_task = comps(tickers, REQUIRED_METRICS, period)
     growth_task = comps(tickers, GROWTH_METRICS, "annual:2")
     market_task = fetch_market_snapshots(tickers)
 
-    sec_results, growth_results, market_results = await asyncio.gather(
-        sec_task, growth_task, market_task, return_exceptions=True
-    )
+    try:
+        sec_results, growth_results, market_results = await asyncio.wait_for(
+            asyncio.gather(sec_task, growth_task, market_task, return_exceptions=True),
+            timeout=timeout,
+        )
+    except TimeoutError:
+        sec_results, growth_results, market_results = {}, {}, {}
 
     # Handle top-level failures
     if isinstance(sec_results, BaseException):

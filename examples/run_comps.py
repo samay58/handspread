@@ -1,7 +1,6 @@
 """Example: run a comparable company analysis on GPU companies."""
 
 import asyncio
-import json
 
 from handspread import analyze_comps
 
@@ -11,9 +10,9 @@ async def main():
     results = await analyze_comps(tickers, period="ltm")
 
     for r in results:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"{r.company_name} ({r.symbol}) | CIK: {r.cik}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         if r.errors:
             print(f"  Errors: {r.errors}")
