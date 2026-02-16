@@ -150,6 +150,25 @@ class TestNegativeSharesWarning:
         assert any("Negative or zero" in w for w in snap.shares_outstanding.warnings)
 
 
+class TestNonPositivePriceWarning:
+    @pytest.mark.asyncio
+    async def test_zero_price_treated_as_none(self):
+        """Zero price should be treated as missing to avoid nonsense market cap."""
+        client = _mock_client(
+            quote={"c": 0.0, "t": 1700000000},
+            profile={"shareOutstanding": 10.0, "name": "ZeroPrice Co"},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("ZERO")
+
+        assert snap.price.value is None
+        assert snap.market_cap.value is None
+        assert any("Negative or zero price" in w for w in snap.price.warnings)
+
+
 class TestFetchSnapshotsPartialFailure:
     @pytest.mark.asyncio
     async def test_partial_failure(self):

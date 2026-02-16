@@ -98,7 +98,7 @@ class TestROIC:
         # ROIC = 0.158
         expected = 2_000_000 * 0.79 / 10_000_000
         assert abs(result["roic"].value - expected) < 0.001
-        assert any("21% tax" in w for w in result["roic"].warnings)
+        assert any("21.0% tax rate" in w for w in result["roic"].warnings)
 
     def test_missing_equity_skips_roic(self):
         sec = {
@@ -130,3 +130,16 @@ class TestZeroSharesSkipsRevenuePerShare:
         market = _make_snapshot(price=100.0, shares=0)
         result = compute_operating(sec, market)
         assert "revenue_per_share" not in result
+
+
+class TestNegativeOperatingIncomeROIC:
+    def test_negative_operating_income_produces_negative_roic(self):
+        sec = {
+            "operating_income": _cited(-2_000_000),
+            "total_debt": _cited(3_000_000),
+            "stockholders_equity": _cited(7_000_000),
+        }
+        result = compute_operating(sec)
+
+        assert result["roic"].value is not None
+        assert result["roic"].value < 0

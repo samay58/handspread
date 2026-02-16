@@ -175,3 +175,17 @@ class TestValuationTimestamp:
         ts = results[0].valuation_timestamp
         assert ts is not None
         assert before <= ts <= after
+
+
+class TestTimeoutHandling:
+    @pytest.mark.asyncio
+    async def test_timeout_returns_per_company_errors(self):
+        """Timeout should return per-company results with SEC and market errors."""
+        with patch("handspread.engine.asyncio.wait_for", side_effect=TimeoutError):
+            results = await analyze_comps(["NVDA"], timeout=0.001)
+
+        assert len(results) == 1
+        r = results[0]
+        assert r.symbol == "NVDA"
+        assert any("SEC" in e for e in r.errors)
+        assert any("Market" in e for e in r.errors)

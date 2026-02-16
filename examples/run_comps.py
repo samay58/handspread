@@ -5,7 +5,8 @@ import asyncio
 from handspread import analyze_comps
 
 
-async def main():
+async def main() -> None:
+    """Run a sample comps analysis and print key outputs with provenance."""
     tickers = ["NVDA", "AMD", "INTC"]
     results = await analyze_comps(tickers, period="ltm")
 
@@ -18,14 +19,16 @@ async def main():
             print(f"  Errors: {r.errors}")
 
         if r.market:
-            print(f"  Price:      ${r.market.price.value:,.2f}")
-            print(f"  Shares:     {r.market.shares_outstanding.value:,.0f}")
+            if r.market.price.value is not None:
+                print(f"  Price:      ${r.market.price.value:,.2f}")
+            if r.market.shares_outstanding.value is not None:
+                print(f"  Shares:     {r.market.shares_outstanding.value:,.0f}")
             if r.market.market_cap_value:
                 print(f"  Market Cap: ${r.market.market_cap_value:,.0f}")
 
         if r.ev_bridge and r.ev_bridge.enterprise_value:
             ev = r.ev_bridge.enterprise_value
-            if ev.value:
+            if ev.value is not None:
                 print(f"  EV:         ${ev.value:,.0f}")
                 print(f"  EV Formula: {ev.formula}")
 

@@ -32,6 +32,7 @@ class MarketValue(BaseModel):
 
     @property
     def citation(self) -> str:
+        """Return a short vendor citation string for this market datapoint."""
         ts = self.fetched_at.strftime("%Y-%m-%d %H:%M")
         return f"{self.vendor}:{self.endpoint} {self.symbol} @ {ts}"
 
@@ -59,6 +60,7 @@ class MarketSnapshot(BaseModel):
 
     @property
     def market_cap_value(self) -> float | None:
+        """Return the numeric market cap value."""
         return self.market_cap.value
 
 

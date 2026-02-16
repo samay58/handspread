@@ -8,6 +8,28 @@ from ..models import ComputedValue, EVBridge, EVPolicy, MarketSnapshot
 from ._utils import extract_sec_value
 
 
+def _apply_component(
+    ev: float,
+    value: float | None,
+    source: Any,
+    key: str,
+    formula_label: str,
+    sign: int,
+    components: dict[str, Any],
+    formula_parts: list[str],
+    bridge: EVBridge,
+    bridge_attr: str,
+) -> float:
+    if value is None:
+        return ev
+    ev += sign * value
+    operator = "+" if sign > 0 else "-"
+    formula_parts.append(f"{operator} {formula_label}")
+    components[key] = source
+    setattr(bridge, bridge_attr, source)
+    return ev
+
+
 def build_ev_bridge(
     market: MarketSnapshot,
     sec_metrics: dict[str, Any],
@@ -76,38 +98,78 @@ def build_ev_bridge(
 
     if policy.debt_mode == "total_only":
         if debt_val is not None:
-            ev += debt_val
-            formula_parts.append("+ total_debt")
-            components["total_debt"] = debt_cv
-            bridge.total_debt = debt_cv
+            ev = _apply_component(
+                ev=ev,
+                value=debt_val,
+                source=debt_cv,
+                key="total_debt",
+                formula_label="total_debt",
+                sign=1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="total_debt",
+            )
         else:
             warnings.append("total_debt missing, treated as 0")
     elif policy.debt_mode == "split":
         if debt_val is not None:
-            ev += debt_val
-            formula_parts.append("+ total_debt(long)")
-            components["total_debt"] = debt_cv
-            bridge.total_debt = debt_cv
+            ev = _apply_component(
+                ev=ev,
+                value=debt_val,
+                source=debt_cv,
+                key="total_debt",
+                formula_label="total_debt(long)",
+                sign=1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="total_debt",
+            )
         if short_debt_val is not None:
-            ev += short_debt_val
-            formula_parts.append("+ short_term_debt")
-            components["short_term_debt"] = short_debt_cv
-            bridge.short_term_debt = short_debt_cv
+            ev = _apply_component(
+                ev=ev,
+                value=short_debt_val,
+                source=short_debt_cv,
+                key="short_term_debt",
+                formula_label="short_term_debt",
+                sign=1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="short_term_debt",
+            )
         if debt_val is not None and short_debt_val is not None:
             warnings.append(
                 "Using split debt mode: verify no overlap between total_debt and short_term_debt"
             )
     elif policy.debt_mode == "total_plus_short":
         if debt_val is not None:
-            ev += debt_val
-            formula_parts.append("+ total_debt")
-            components["total_debt"] = debt_cv
-            bridge.total_debt = debt_cv
+            ev = _apply_component(
+                ev=ev,
+                value=debt_val,
+                source=debt_cv,
+                key="total_debt",
+                formula_label="total_debt",
+                sign=1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="total_debt",
+            )
         if short_debt_val is not None:
-            ev += short_debt_val
-            formula_parts.append("+ short_term_debt")
-            components["short_term_debt"] = short_debt_cv
-            bridge.short_term_debt = short_debt_cv
+            ev = _apply_component(
+                ev=ev,
+                value=short_debt_val,
+                source=short_debt_cv,
+                key="short_term_debt",
+                formula_label="short_term_debt",
+                sign=1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="short_term_debt",
+            )
 
     # Extract cash and marketable securities (used in both EV calc and net debt)
     cash_val, cash_cv = extract_sec_value(sec_metrics, "cash")
@@ -116,54 +178,102 @@ def build_ev_bridge(
     # Cash subtraction
     if policy.cash_treatment == "subtract":
         if cash_val is not None:
-            ev -= cash_val
-            formula_parts.append("- cash")
-            components["cash"] = cash_cv
-            bridge.cash_and_equivalents = cash_cv
+            ev = _apply_component(
+                ev=ev,
+                value=cash_val,
+                source=cash_cv,
+                key="cash",
+                formula_label="cash",
+                sign=-1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="cash_and_equivalents",
+            )
         else:
             warnings.append("cash missing, treated as 0")
 
         if ms_val is not None:
-            ev -= ms_val
-            formula_parts.append("- marketable_securities")
-            components["marketable_securities"] = ms_cv
-            bridge.marketable_securities = ms_cv
+            ev = _apply_component(
+                ev=ev,
+                value=ms_val,
+                source=ms_cv,
+                key="marketable_securities",
+                formula_label="marketable_securities",
+                sign=-1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="marketable_securities",
+            )
 
     # Operating lease liabilities
     if policy.include_leases:
         lease_val, lease_cv = extract_sec_value(sec_metrics, "operating_lease_liabilities")
         if lease_val is not None:
-            ev += lease_val
-            formula_parts.append("+ operating_lease_liabilities")
-            components["operating_lease_liabilities"] = lease_cv
-            bridge.operating_lease_liabilities = lease_cv
+            ev = _apply_component(
+                ev=ev,
+                value=lease_val,
+                source=lease_cv,
+                key="operating_lease_liabilities",
+                formula_label="operating_lease_liabilities",
+                sign=1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="operating_lease_liabilities",
+            )
         else:
             warnings.append("operating_lease_liabilities requested but missing")
 
     # Preferred stock
     pref_val, pref_cv = extract_sec_value(sec_metrics, "preferred_stock")
     if pref_val is not None:
-        ev += pref_val
-        formula_parts.append("+ preferred_stock")
-        components["preferred_stock"] = pref_cv
-        bridge.preferred_stock = pref_cv
+        ev = _apply_component(
+            ev=ev,
+            value=pref_val,
+            source=pref_cv,
+            key="preferred_stock",
+            formula_label="preferred_stock",
+            sign=1,
+            components=components,
+            formula_parts=formula_parts,
+            bridge=bridge,
+            bridge_attr="preferred_stock",
+        )
 
     # Noncontrolling interests
     nci_val, nci_cv = extract_sec_value(sec_metrics, "noncontrolling_interests")
     if nci_val is not None:
-        ev += nci_val
-        formula_parts.append("+ noncontrolling_interests")
-        components["noncontrolling_interests"] = nci_cv
-        bridge.noncontrolling_interests = nci_cv
+        ev = _apply_component(
+            ev=ev,
+            value=nci_val,
+            source=nci_cv,
+            key="noncontrolling_interests",
+            formula_label="noncontrolling_interests",
+            sign=1,
+            components=components,
+            formula_parts=formula_parts,
+            bridge=bridge,
+            bridge_attr="noncontrolling_interests",
+        )
 
     # Equity method investments
     if policy.subtract_equity_method_investments:
         emi_val, emi_cv = extract_sec_value(sec_metrics, "equity_method_investments")
         if emi_val is not None:
-            ev -= emi_val
-            formula_parts.append("- equity_method_investments")
-            components["equity_method_investments"] = emi_cv
-            bridge.equity_method_investments = emi_cv
+            ev = _apply_component(
+                ev=ev,
+                value=emi_val,
+                source=emi_cv,
+                key="equity_method_investments",
+                formula_label="equity_method_investments",
+                sign=-1,
+                components=components,
+                formula_parts=formula_parts,
+                bridge=bridge,
+                bridge_attr="equity_method_investments",
+            )
 
     # Net debt (reuses cash_val and ms_val extracted above)
     debt_total = 0.0

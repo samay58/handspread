@@ -113,6 +113,7 @@ class TestEquityMultiples:
         result = compute_multiples(bridge, market, sec)
         expected = 10_000_000 / 100_000_000  # 0.1
         assert abs(result["fcf_yield"].value - expected) < 0.001
+        assert result["fcf_yield"].unit == "pure"
 
     def test_dividend_yield(self):
         bridge = _make_ev_bridge(10_000_000_000)
@@ -122,6 +123,7 @@ class TestEquityMultiples:
         result = compute_multiples(bridge, market, sec)
         expected = 2.0 / 50.0  # 0.04
         assert abs(result["dividend_yield"].value - expected) < 0.001
+        assert result["dividend_yield"].unit == "pure"
 
 
 class TestNegativeNetIncomePE:

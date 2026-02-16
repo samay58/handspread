@@ -32,6 +32,7 @@ def _pct_of_revenue(
 def compute_operating(
     sec_metrics: dict[str, Any],
     market: MarketSnapshot | None = None,
+    tax_rate: float = 0.21,
 ) -> dict[str, ComputedValue]:
     """Compute operating efficiency metrics."""
     result: dict[str, ComputedValue] = {}
@@ -72,19 +73,20 @@ def compute_operating(
     if oi_val is not None and debt_val is not None and eq_val is not None:
         invested_capital = debt_val + eq_val
         if invested_capital > 0:
-            # Approximate tax rate of 21%
-            nopat = oi_val * (1 - 0.21)
+            nopat = oi_val * (1 - tax_rate)
             result["roic"] = ComputedValue(
                 metric="roic",
                 value=nopat / invested_capital,
                 unit="pure",
-                formula="operating_income * (1 - 0.21) / (total_debt + stockholders_equity)",
+                formula=(
+                    f"operating_income * (1 - {tax_rate:g}) / (total_debt + stockholders_equity)"
+                ),
                 components={
                     "operating_income": oi_src,
                     "total_debt": debt_src,
                     "stockholders_equity": eq_src,
                 },
-                warnings=["ROIC uses assumed 21% tax rate; actual rate may differ"],
+                warnings=[f"ROIC uses assumed {tax_rate:.1%} tax rate; actual rate may differ"],
             )
 
     return result

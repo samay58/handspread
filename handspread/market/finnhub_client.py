@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
 import finnhub
 
@@ -52,31 +54,31 @@ def _cache_set(endpoint: str, symbol: str, payload: dict) -> None:
     _cache[(endpoint, symbol)] = (time.time(), payload)
 
 
-async def _fetch_quote(client: finnhub.Client, symbol: str) -> dict:
-    cached = _cache_get("quote", symbol)
+async def _cached_call(
+    endpoint: str,
+    ticker: str,
+    fn: Callable[..., dict[str, Any]],
+    *args: Any,
+    **kwargs: Any,
+) -> dict:
+    cached = _cache_get(endpoint, ticker)
     if cached is not None:
         return cached
-    data = await _call_in_thread(client.quote, symbol)
-    _cache_set("quote", symbol, data)
+    data = await _call_in_thread(fn, *args, **kwargs)
+    _cache_set(endpoint, ticker, data)
     return data
+
+
+async def _fetch_quote(client: finnhub.Client, symbol: str) -> dict:
+    return await _cached_call("quote", symbol, client.quote, symbol)
 
 
 async def _fetch_metric(client: finnhub.Client, symbol: str) -> dict:
-    cached = _cache_get("metric", symbol)
-    if cached is not None:
-        return cached
-    data = await _call_in_thread(client.company_basic_financials, symbol, "all")
-    _cache_set("metric", symbol, data)
-    return data
+    return await _cached_call("metric", symbol, client.company_basic_financials, symbol, "all")
 
 
 async def _fetch_profile(client: finnhub.Client, symbol: str) -> dict:
-    cached = _cache_get("profile", symbol)
-    if cached is not None:
-        return cached
-    data = await _call_in_thread(client.company_profile2, symbol=symbol)
-    _cache_set("profile", symbol, data)
-    return data
+    return await _cached_call("profile", symbol, client.company_profile2, symbol=symbol)
 
 
 async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
@@ -93,6 +95,13 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
 
     # Price from quote endpoint
     current_price = quote_data.get("c")
+    price_warnings: list[str] = []
+    if current_price is not None and current_price <= 0:
+        price_warnings.append(
+            f"Negative or zero price from quote endpoint ({current_price}); treated as None"
+        )
+        current_price = None
+
     price_mv = MarketValue(
         metric="price",
         value=current_price,
@@ -105,12 +114,15 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         else None,
         fetched_at=now,
         raw=quote_data if store_raw else None,
+        warnings=price_warnings,
     )
 
     # Shares outstanding from profile (in millions) or metric endpoint
     so_raw = profile_data.get("shareOutstanding")
     so_warnings: list[str] = []
     so_notes: list[str] = []
+    shares_endpoint = "profile"
+    shares_raw_payload: dict[str, Any] = profile_data
 
     if so_raw is not None and so_raw <= 0:
         so_warnings.append(
@@ -125,14 +137,43 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
     else:
         # Fallback to metric endpoint
         metric_values = metric_data.get("metric", {})
-        so_raw = metric_values.get("shareOutstanding") or metric_values.get("sharesOutstanding")
-        if so_raw is not None and so_raw < 1_000_000:
-            shares_value = so_raw * 1_000_000
-            so_notes.append(f"Raw value {so_raw} < 1M, treated as millions, multiplied by 1e6")
-        else:
-            shares_value = so_raw
+        so_raw = metric_values.get("shareOutstanding")
         if so_raw is None:
+            so_raw = metric_values.get("sharesOutstanding")
+        shares_endpoint = "metric"
+        shares_raw_payload = metric_data
+
+        # Metric endpoint unit can vary. Heuristic:
+        # - very small values (< 1,000) look like "millions of shares"
+        # - very large values (> 1,000,000) look like absolute share count
+        # - middle values are ambiguous and treated as millions with a warning
+        if so_raw is None:
+            shares_value = None
             so_warnings.append("Shares outstanding not found in profile or metric endpoint")
+        elif so_raw <= 0:
+            shares_value = None
+            so_warnings.append(
+                "Negative or zero shares outstanding from metric endpoint "
+                f"({so_raw}); treated as None"
+            )
+        elif so_raw < 1_000:
+            shares_value = so_raw * 1_000_000
+            so_notes.append(
+                f"Raw metric value {so_raw} looked like millions (< 1,000), multiplied by 1e6"
+            )
+        elif so_raw > 1_000_000:
+            shares_value = so_raw
+            so_notes.append(
+                "Raw metric value "
+                f"{so_raw} looked like absolute shares (> 1,000,000), used directly"
+            )
+        else:
+            shares_value = so_raw * 1_000_000
+            so_warnings.append(
+                "Shares outstanding from metric endpoint was between 1,000 and 1,000,000; "
+                "assumed value is in millions"
+            )
+            so_notes.append(f"Ambiguous metric value {so_raw}, multiplied by 1e6")
 
     shares_mv = MarketValue(
         metric="shares_outstanding",
@@ -140,9 +181,9 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         unit="shares",
         vendor="finnhub",
         symbol=symbol,
-        endpoint="profile",
+        endpoint=shares_endpoint,
         fetched_at=now,
-        raw=profile_data if store_raw else None,
+        raw=shares_raw_payload if store_raw else None,
         warnings=so_warnings,
         notes=so_notes,
     )
@@ -181,7 +222,7 @@ async def fetch_market_snapshots(
 
     output: dict[str, MarketSnapshot | None] = {}
     for symbol, result in zip(symbols, results):
-        if isinstance(result, BaseException):
+        if isinstance(result, Exception):
             output[symbol] = None
         else:
             output[symbol] = result
@@ -190,6 +231,7 @@ async def fetch_market_snapshots(
 
 def clear_cache() -> None:
     """Clear the in-memory TTL cache and client. Useful for testing."""
-    global _client
+    global _client, _semaphore
     _cache.clear()
     _client = None
+    _semaphore = None

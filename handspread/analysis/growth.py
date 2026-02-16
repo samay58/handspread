@@ -63,7 +63,7 @@ def compute_growth(annual_metrics: dict[str, Any]) -> dict[str, ComputedValue]:
     """
     result: dict[str, ComputedValue] = {}
 
-    growth_keys = ["revenue", "ebitda", "net_income", "eps_diluted"]
+    growth_keys = ["revenue", "ebitda", "net_income", "eps_diluted", "depreciation_amortization"]
 
     for key in growth_keys:
         series = annual_metrics.get(key)

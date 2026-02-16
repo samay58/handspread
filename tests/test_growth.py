@@ -49,6 +49,11 @@ class TestMissingPrior:
         result = compute_growth(metrics)
         assert "revenue_yoy" not in result
 
+    def test_empty_series_skipped(self):
+        metrics = {"revenue": []}
+        result = compute_growth(metrics)
+        assert "revenue_yoy" not in result
+
 
 class TestNegativePrior:
     def test_negative_prior_uses_abs(self):

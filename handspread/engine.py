@@ -48,7 +48,10 @@ REQUIRED_METRICS = [
 # Metrics needed for growth (annual series)
 GROWTH_METRICS = [
     "revenue",
+    "ebitda",
     "net_income",
+    "eps_diluted",
+    "depreciation_amortization",
 ]
 
 
@@ -57,6 +60,7 @@ async def analyze_comps(
     period: str = "ltm",
     ev_policy: EVPolicy | None = None,
     timeout: float = 60.0,
+    tax_rate: float = 0.21,
 ) -> list[CompanyAnalysis]:
     """Run full comparable company analysis across tickers.
 
@@ -83,11 +87,11 @@ async def analyze_comps(
         sec_results, growth_results, market_results = {}, {}, {}
 
     # Handle top-level failures
-    if isinstance(sec_results, BaseException):
+    if isinstance(sec_results, Exception):
         sec_results = {}
-    if isinstance(growth_results, BaseException):
+    if isinstance(growth_results, Exception):
         growth_results = {}
-    if isinstance(market_results, BaseException):
+    if isinstance(market_results, Exception):
         market_results = {}
 
     analyses: list[CompanyAnalysis] = []
@@ -101,6 +105,7 @@ async def analyze_comps(
             period=period,
             ev_policy=ev_policy,
             valuation_ts=valuation_ts,
+            tax_rate=tax_rate,
         )
         analyses.append(analysis)
 
@@ -115,6 +120,7 @@ def _build_single(
     period: str,
     ev_policy: EVPolicy | None,
     valuation_ts: datetime,
+    tax_rate: float,
 ) -> CompanyAnalysis:
     """Assemble a CompanyAnalysis for one ticker. Never raises."""
     errors: list[str] = []
@@ -165,7 +171,7 @@ def _build_single(
     # Operating metrics
     operating = {}
     try:
-        operating = compute_operating(sec_metrics, market_snapshot)
+        operating = compute_operating(sec_metrics, market_snapshot, tax_rate=tax_rate)
     except Exception as e:
         errors.append(f"Operating metrics computation failed: {e}")
 

@@ -1,12 +1,16 @@
 # Handspread
 
-Comparable company analysis engine with full provenance chains. Every number traces back to its source: SEC EDGAR filings (via edgarpack) or market data vendor (Finnhub).
+Handspread builds comparable company analysis from primary sources. Market data comes from Finnhub. Financial statement data comes from SEC EDGAR filings via edgarpack. Every computed number keeps its source chain.
 
 ## Quickstart
 
 ```bash
-uv pip install -e "../edgarpack" && uv pip install -e ".[dev]"
-FINNHUB_API_KEY=<your-key> EDGARPACK_USER_AGENT="Name email@co.com" python examples/run_comps.py
+uv pip install -e "../edgarpack"
+uv pip install -e ".[dev]"
+
+FINNHUB_API_KEY=<your-key> \
+EDGARPACK_USER_AGENT="Name email@co.com" \
+python examples/run_comps.py
 ```
 
 ## Environment Variables
@@ -14,52 +18,55 @@ FINNHUB_API_KEY=<your-key> EDGARPACK_USER_AGENT="Name email@co.com" python examp
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `FINNHUB_API_KEY` | Yes | - | Finnhub API key |
-| `EDGARPACK_USER_AGENT` | Yes | - | SEC EDGAR user agent (e.g. "Company admin@co.com") |
-| `MARKET_TTL_SECONDS` | No | 300 | Market data cache TTL |
-| `MARKET_CONCURRENCY` | No | 8 | Max concurrent Finnhub requests |
+| `EDGARPACK_USER_AGENT` | Yes | - | SEC EDGAR user agent, for example `Name email@co.com` |
+| `MARKET_TTL_SECONDS` | No | `300` | Market payload cache TTL in seconds. `0` disables cache reuse |
+| `MARKET_CONCURRENCY` | No | `8` | Max concurrent Finnhub calls |
 
 ## Usage
 
 ```python
 import asyncio
+
 from handspread import analyze_comps
 
-results = asyncio.run(analyze_comps(["NVDA", "AMD", "INTC"]))
+results = asyncio.run(
+    analyze_comps(
+        ["NVDA", "AMD", "INTC"],
+        period="ltm",
+        tax_rate=0.21,
+    )
+)
 
 for r in results:
-    print(f"{r.company_name}: EV/Revenue = {r.multiples['ev_revenue'].value:.1f}x")
+    ev_rev = r.multiples.get("ev_revenue")
+    if ev_rev and ev_rev.value is not None:
+        print(f"{r.symbol}: EV/Revenue {ev_rev.value:.1f}x")
 ```
 
-## Provenance Chain
+## What It Computes
 
-Every value in a `CompanyAnalysis` is one of three types:
+- EV bridge with configurable policy choices for debt, cash, leases, and investment adjustments
+- EV and equity multiples: EV/Revenue, EV/EBITDA, EV/EBIT, EV/FCF, P/E, P/B, FCF yield, dividend yield
+- YoY growth from annual series
+- Operating metrics: R&D %, SG&A %, capex %, revenue per share, ROIC
 
-- **MarketValue**: from Finnhub, with vendor, endpoint, timestamp, and optional raw payload
-- **CitedValue**: from SEC EDGAR (via edgarpack), with filing URL, accession number, XBRL concept
-- **ComputedValue**: derived from other values, with formula string and component references
+## Provenance Model
 
-```python
-ev_rev = results[0].multiples["ev_revenue"]
-print(ev_rev.formula)       # "enterprise_value / revenue"
-print(ev_rev.components)    # {"numerator": ComputedValue(...), "denominator": CitedValue(...)}
-```
+Every value in `CompanyAnalysis` is one of these types:
 
-## Tests
+- `MarketValue`: direct vendor datapoint, with endpoint and fetch timestamp
+- `CitedValue`: SEC filing datapoint from edgarpack, with filing metadata
+- `ComputedValue`: derived value with formula text and component references
+
+## Quality Checks
 
 ```bash
-python -m pytest tests/ -x -q
+python -m pytest tests/ -x -v
+ruff check .
+ruff format --check .
 ```
 
-All tests are offline (no API keys needed). They use `SimpleNamespace` stubs for SEC data.
+## More Detail
 
-## Architecture
-
-Three concurrent data streams feed into per-company analysis:
-
-1. **SEC LTM financials** via `edgarpack.comps()` - income statement, balance sheet, cash flow
-2. **SEC annual series** via `edgarpack.comps(period="annual:2")` - for YoY growth
-3. **Finnhub market data** - price, shares outstanding, market cap
-
-Each company gets: EV bridge, valuation multiples, growth rates, operating efficiency metrics.
-
-All timestamps in the output are UTC.
+- `ARCHITECTURE.md`: plain-language walkthrough for technical and non-technical readers
+- `handspread/CLAUDE.md`: engineering context and commands for contributors
