@@ -9,6 +9,13 @@ Handspread is in a clean, testable state for core analysis flows:
 - Finnhub client has TTL cache and bounded concurrency
 - Test suite runs offline and covers core edge cases
 
+## Design Decisions To Preserve
+
+- Keep provenance explicit in the data model. This is the main differentiator of the project.
+- Keep errors isolated per ticker. Losing one company should not kill the run.
+- Keep EV policy configurable and visible in call sites. This prevents hidden analyst-assumption drift.
+- Keep market fallback assumptions paired with warnings. Silent unit guesses are hard to debug later.
+
 ## Verification
 
 Run these before merging or sharing results:

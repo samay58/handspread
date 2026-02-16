@@ -31,6 +31,13 @@ Three concurrent streams feed `handspread/engine.py`:
 
 `analyze_comps()` fans out those calls, applies a timeout, and builds each `CompanyAnalysis` with isolated per-company errors.
 
+## Design Decisions
+
+- We isolate failures per ticker and return partial output. The caller usually wants coverage across the full comp set, not all-or-nothing behavior.
+- We keep provenance at the value layer, not in ad-hoc side metadata. This keeps traceability hard to lose during refactors.
+- We keep EV assumptions explicit through `EVPolicy`. These assumptions vary by team and should be easy to inspect.
+- We keep Finnhub fallback heuristics narrow and warning-backed. Ambiguous units are surfaced instead of silently trusted.
+
 ### Analysis Modules
 
 - `handspread/analysis/_utils.py`: shared SEC value extraction helper

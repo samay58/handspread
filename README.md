@@ -50,6 +50,14 @@ for r in results:
 - YoY growth from annual series
 - Operating metrics: R&D %, SG&A %, capex %, revenue per share, ROIC
 
+## Design Choices
+
+- We run three independent data streams in parallel. That keeps runs fast and keeps one slow upstream from blocking everything.
+- We isolate failures per ticker. A bad ticker should not break the whole comp set.
+- We model every value as `MarketValue`, `CitedValue`, or `ComputedValue`. This keeps audit trails explicit in code, not buried in comments.
+- We keep EV policy choices configurable. Different teams treat leases, debt splits, and non-operating assets differently, so we make those choices visible and repeatable.
+- We treat ambiguous market-unit edge cases conservatively and attach warnings. It is better to flag uncertainty than quietly publish a clean-looking bad number.
+
 ## Provenance Model
 
 Every value in `CompanyAnalysis` is one of these types:

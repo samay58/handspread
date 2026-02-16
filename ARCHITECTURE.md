@@ -12,6 +12,14 @@ Finnhub (market data)    -----/
 
 In code, this happens with `asyncio.gather(...)` inside `analyze_comps()`. Each stream can fail without taking down the whole run. If one company fails a stream, the result object keeps partial data and records the error.
 
+## Design Decisions and Why We Made Them
+
+- We fetch SEC and market data concurrently. This is mostly I/O wait, so parallel calls cut wall-clock time for real comp sets.
+- We keep `return_exceptions=True` and convert failures into per-company errors. In practice, upstream APIs fail occasionally, and we still need usable output for the rest of the basket.
+- We use explicit value types for provenance. This makes it obvious which numbers are vendor inputs, SEC facts, or derived math.
+- We keep EV construction policy-driven. Analysts differ on leases, debt treatment, and non-operating investments, and we need to show those choices instead of hiding them.
+- We keep market-data fallbacks simple but annotated with warnings. Unit ambiguity happens on vendor endpoints; we document assumptions at the value level so bad inputs are visible.
+
 ## What Gets Computed
 
 NVIDIA is a good running example because it appears in the sample script.
@@ -77,7 +85,7 @@ Handspread has three value types.
 - `CitedValue`: raw SEC datapoint from edgarpack with filing metadata.
 - `ComputedValue`: derived metric with a formula string and the source values used.
 
-That means any output can be audited end to end.
+This is the core quality bar for the project. We can explain any number from output back to source.
 
 Example trace for `EV/Revenue`:
 
