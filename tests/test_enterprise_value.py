@@ -204,6 +204,36 @@ class TestNetDebt:
         assert bridge.net_debt.value == 500_000
 
 
+class TestCurrencyMismatch:
+    def test_currency_mismatch_returns_none_ev(self):
+        """Non-USD SEC data should produce None EV with currency warning."""
+        market = _make_snapshot(price=100.0, shares=1_000_000)
+        sec = {
+            "total_debt": _cited(4_000_000_000_000, unit="JPY"),
+            "cash": _cited(500_000_000_000, unit="JPY"),
+        }
+        bridge = build_ev_bridge(market, sec)
+
+        assert bridge.enterprise_value is not None
+        assert bridge.enterprise_value.value is None
+        assert any("JPY" in w for w in bridge.enterprise_value.warnings)
+        # Equity value should still be set
+        assert bridge.equity_value is not None
+        assert bridge.equity_value.value == 100_000_000
+
+    def test_usd_sec_data_computes_normally(self):
+        """USD SEC data should compute EV normally (no regression)."""
+        market = _make_snapshot(price=100.0, shares=1_000_000)
+        sec = {
+            "total_debt": _cited(500_000, unit="USD"),
+            "cash": _cited(200_000, unit="USD"),
+        }
+        bridge = build_ev_bridge(market, sec)
+
+        expected = 100_000_000 + 500_000 - 200_000
+        assert bridge.enterprise_value.value == expected
+
+
 class TestMissingMarketCap:
     def test_none_ev_when_no_market_cap(self):
         market = _make_snapshot(price=None, shares=1_000_000)

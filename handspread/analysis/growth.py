@@ -67,6 +67,8 @@ def compute_growth(annual_metrics: dict[str, Any]) -> dict[str, ComputedValue]:
 
     for key in growth_keys:
         series = annual_metrics.get(key)
+        if series is not None and not isinstance(series, list):
+            continue  # skip derived metrics that aren't returned as series
         cv = _yoy_growth(key, series)
         if cv is not None:
             result[f"{key}_yoy"] = cv

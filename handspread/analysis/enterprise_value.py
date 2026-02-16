@@ -35,6 +35,27 @@ def build_ev_bridge(
         components={"market_cap": market.market_cap},
     )
 
+    # Check for currency mismatch between SEC data and market data (USD)
+    sec_currency = None
+    for cv_or_list in sec_metrics.values():
+        cv = cv_or_list[0] if isinstance(cv_or_list, list) else cv_or_list
+        if cv is not None and hasattr(cv, "unit") and cv.unit:
+            sec_currency = cv.unit
+            break
+
+    if sec_currency is not None and sec_currency != "USD":
+        bridge.enterprise_value = ComputedValue(
+            metric="enterprise_value",
+            value=None,
+            unit="USD",
+            formula="equity_value + debt - cash + adjustments",
+            warnings=[
+                f"SEC data is in {sec_currency} but market data is in USD; "
+                "cannot mix currencies in EV bridge"
+            ],
+        )
+        return bridge
+
     if mcap is None:
         bridge.enterprise_value = ComputedValue(
             metric="enterprise_value",

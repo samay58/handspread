@@ -77,6 +77,31 @@ class TestNegativeToNegativeTransition:
         assert any("negative" in w for w in result["net_income_yoy"].warnings)
 
 
+class TestDerivedValueSkipped:
+    def test_derived_value_in_series_skipped(self):
+        """Non-list values (e.g. DerivedValue) should be skipped, not crash."""
+        derived = SimpleNamespace(value=100, metric="ebitda", unit="USD")
+        metrics = {
+            "revenue": [_cited(110), _cited(100)],
+            "ebitda": derived,  # single object, not a list
+        }
+        result = compute_growth(metrics)
+
+        assert "revenue_yoy" in result
+        assert "ebitda_yoy" not in result
+
+    def test_string_value_skipped(self):
+        """Arbitrary non-list types should be skipped gracefully."""
+        metrics = {
+            "revenue": [_cited(120), _cited(100)],
+            "eps_diluted": "not_a_list",
+        }
+        result = compute_growth(metrics)
+
+        assert "revenue_yoy" in result
+        assert "eps_diluted_yoy" not in result
+
+
 class TestThreeYearSeriesUsesFirstTwo:
     def test_three_year_series(self):
         """Series length 3: only [0] and [1] used for YoY growth."""

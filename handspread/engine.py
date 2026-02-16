@@ -48,9 +48,7 @@ REQUIRED_METRICS = [
 # Metrics needed for growth (annual series)
 GROWTH_METRICS = [
     "revenue",
-    "ebitda",
     "net_income",
-    "eps_diluted",
 ]
 
 
