@@ -40,11 +40,11 @@ Three concurrent streams feed `handspread/engine.py`:
 
 ### Analysis Modules
 
-- `handspread/analysis/_utils.py`: shared SEC value extraction, currency detection, and `compute_adjusted_ebitda` (used by multiples, operating, and growth)
+- `handspread/analysis/_utils.py`: shared helpers: SEC value extraction, currency detection, adjusted EBITDA
 - `handspread/analysis/enterprise_value.py`: EV bridge construction and policy handling
 - `handspread/analysis/multiples.py`: EV and equity multiples plus yields
-- `handspread/analysis/growth.py`: YoY growth from LTM vs LTM-1 plus margin deltas (gross, EBITDA, adjusted EBITDA)
-- `handspread/analysis/operating.py`: operating ratios, margin computations (gross, EBITDA, net, FCF, adjusted EBITDA), revenue/share, and ROIC
+- `handspread/analysis/growth.py`: YoY growth rates and margin deltas (decimal change, not percentage of margin)
+- `handspread/analysis/operating.py`: margin ratios, expense ratios, revenue/share, and ROIC
 
 ### Provenance Model
 

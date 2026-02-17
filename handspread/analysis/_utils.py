@@ -100,7 +100,6 @@ def compute_adjusted_ebitda(
     """Compute adjusted EBITDA = operating_income + D&A + SBC.
 
     Returns (adj_ebitda_value, adj_ebitda_computed_value, warnings).
-    Importable by multiples, operating, and growth modules.
     """
     from ..models import ComputedValue
 

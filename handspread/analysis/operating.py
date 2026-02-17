@@ -1,4 +1,4 @@
-"""Operating efficiency ratios and per-share metrics."""
+"""Operating metrics: margin ratios, expense ratios, revenue/share, and ROIC."""
 
 from __future__ import annotations
 

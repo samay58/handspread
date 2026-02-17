@@ -1,4 +1,4 @@
-"""Year-over-year growth calculations from LTM vs LTM-1 data."""
+"""YoY growth rates and margin deltas from LTM vs LTM-1 data."""
 
 from __future__ import annotations
 
@@ -8,6 +8,14 @@ from ..models import ComputedValue
 from ._utils import compute_adjusted_ebitda, extract_sec_value
 
 GROWTH_KEYS = ["revenue", "ebitda", "net_income", "eps_diluted", "depreciation_amortization"]
+
+
+def _has_split_warning(source: Any) -> bool:
+    """Check if a source value carries a stock split contamination warning."""
+    warnings = getattr(source, "warnings", None)
+    if not warnings:
+        return False
+    return any("stock split contamination" in w.lower() for w in warnings)
 
 
 def _safe_growth(
@@ -20,6 +28,22 @@ def _safe_growth(
     """Compute YoY growth from LTM and LTM-1 values."""
     if ltm_val is None or ltm1_val is None:
         return None
+
+    # Skip growth when stock split contamination is detected
+    if _has_split_warning(ltm_src) or _has_split_warning(ltm1_src):
+        components: dict[str, Any] = {}
+        if ltm_src is not None:
+            components["current"] = ltm_src
+        if ltm1_src is not None:
+            components["prior"] = ltm1_src
+        return ComputedValue(
+            metric=f"{metric_name}_yoy",
+            value=None,
+            unit="pure",
+            formula=f"({metric_name}_ltm - {metric_name}_ltm1) / abs({metric_name}_ltm1)",
+            components=components,
+            warnings=["Skipped: stock split contamination detected in source data"],
+        )
 
     formula = f"({metric_name}_ltm - {metric_name}_ltm1) / abs({metric_name}_ltm1)"
     warnings: list[str] = []
@@ -102,9 +126,9 @@ def compute_growth(
     ltm_metrics: dict[str, Any],
     ltm1_metrics: dict[str, Any],
 ) -> dict[str, ComputedValue]:
-    """Compute YoY growth for key metrics from LTM vs LTM-1 query results.
+    """Compute YoY growth and margin deltas from LTM vs LTM-1 query results.
 
-    Also computes margin deltas (bps change) for gross, EBITDA, and adjusted EBITDA.
+    Margin deltas are raw decimal change (0.02 = +200bps expansion).
 
     ltm_metrics: single CitedValue per key from the LTM period query.
     ltm1_metrics: single CitedValue per key from the LTM-1 period query.
