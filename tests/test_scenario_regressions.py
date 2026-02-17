@@ -386,3 +386,105 @@ async def test_chinese_adr_cluster_cny_behavior():
             assert result.ev_bridge.enterprise_value.value is None
             assert result.multiples["pe"].value is None
             assert any("cannot mix currencies" in w for w in result.multiples["pe"].warnings)
+
+
+@pytest.mark.asyncio
+async def test_adr_market_cap_uses_vendor():
+    """ADR ticker should use vendor-reported market cap, not inflated price * shares."""
+    tickers = ["TSM"]
+    ltm = {"TSM": _query_result("TSM", _ltm_metrics(unit="TWD"))}
+    growth = {"TSM": _query_result("TSM", _growth_metrics(unit="TWD"), period="ltm-1")}
+
+    # Simulate ADR: ordinary shares are 25.9B but the ADR price is $200
+    # Vendor market cap is $950B (correct), computed would be $5.18T (wrong)
+    now = datetime(2026, 2, 17, 12, 0, tzinfo=UTC)
+    price_mv = MarketValue(
+        metric="price", value=200.0, unit="USD", vendor="finnhub",
+        symbol="TSM", endpoint="quote", fetched_at=now,
+    )
+    shares_mv = MarketValue(
+        metric="shares_outstanding", value=25_900_000_000, unit="shares",
+        vendor="finnhub", symbol="TSM", endpoint="profile", fetched_at=now,
+    )
+    # Vendor-reported market cap (not computed)
+    mcap_mv = MarketValue(
+        metric="market_cap", value=950_000_000_000, unit="USD",
+        vendor="finnhub", symbol="TSM", endpoint="profile", fetched_at=now,
+        notes=["Vendor-reported marketCapitalization=950000M from profile endpoint"],
+    )
+    market = {
+        "TSM": MarketSnapshot(
+            symbol="TSM", company_name="TSM Corp",
+            price=price_mv, shares_outstanding=shares_mv, market_cap=mcap_mv,
+        )
+    }
+    results = await _run_analysis(tickers, ltm, growth, market)
+    tsm = results[0]
+    # Market cap should be $950B, not $5.18T
+    assert tsm.market.market_cap.value == 950_000_000_000
+
+
+@pytest.mark.asyncio
+async def test_captive_finance_debt():
+    """Ford-like company should resolve consolidated debt from broad XBRL tags."""
+    tickers = ["F"]
+    ltm = {
+        "F": _query_result(
+            "F",
+            _ltm_metrics(
+                total_debt=_cited(160_000_000_000, "total_debt", "USD"),
+            ),
+        )
+    }
+    growth = {"F": _query_result("F", _growth_metrics(), period="ltm-1")}
+    market = {"F": _snapshot("F", price=12.0, shares=4_000_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    f_result = results[0]
+    assert f_result.ev_bridge is not None
+    assert f_result.ev_bridge.enterprise_value.value is not None
+    # EV should reflect the large debt position
+    ev = f_result.ev_bridge.enterprise_value.value
+    assert ev > 100_000_000_000  # EV > $100B given $160B debt
+
+
+@pytest.mark.asyncio
+async def test_annual_only_filer_growth():
+    """20-F filer with annual-only data should show non-zero YoY growth."""
+    tickers = ["TSM"]
+    # LTM for annual-only filer resolves to most recent FY
+    ltm = {
+        "TSM": _query_result(
+            "TSM",
+            _ltm_metrics(
+                revenue=_cited(90_000_000_000, "revenue", "USD"),
+            ),
+        )
+    }
+    # LTM-1 for annual-only filer resolves to prior FY
+    growth = {
+        "TSM": _query_result(
+            "TSM",
+            {
+                "revenue": _cited(70_000_000_000, "revenue", "USD"),
+                "ebitda": _cited(5_000_000_000, "ebitda", "USD"),
+                "net_income": _cited(2_500_000_000, "net_income", "USD"),
+                "eps_diluted": _cited(2.0, "eps_diluted", "USD"),
+                "depreciation_amortization": _cited(
+                    900_000_000, "depreciation_amortization", "USD"
+                ),
+                "gross_profit": _cited(12_000_000_000, "gross_profit", "USD"),
+                "operating_income": _cited(4_500_000_000, "operating_income", "USD"),
+                "stock_based_compensation": _cited(400_000_000, "stock_based_compensation", "USD"),
+            },
+            period="ltm-1",
+        ),
+    }
+    market = {"TSM": _snapshot("TSM", price=200.0, shares=5_000_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    tsm = results[0]
+    assert "revenue_yoy" in tsm.growth
+    # Revenue grew from $70B to $90B = ~28.6% growth
+    assert tsm.growth["revenue_yoy"].value is not None
+    assert abs(tsm.growth["revenue_yoy"].value - (90 - 70) / 70) < 0.01

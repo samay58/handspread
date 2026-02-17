@@ -213,19 +213,43 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         notes=so_notes,
     )
 
-    # Market cap = price * shares
-    if current_price is not None and shares_value is not None:
-        mcap = current_price * shares_value
-    else:
-        mcap = None
-
-    mcap_cv = ComputedValue(
-        metric="market_cap",
-        value=mcap,
-        unit="USD",
-        formula="price * shares_outstanding",
-        components={"price": price_mv, "shares_outstanding": shares_mv},
+    # Market cap: prefer vendor-reported value from profile (avoids ADR share/price mismatch)
+    vendor_mcap_raw = profile_data.get("marketCapitalization")
+    vendor_is_valid = (
+        vendor_mcap_raw is not None
+        and isinstance(vendor_mcap_raw, (int, float))
+        and vendor_mcap_raw > 0
     )
+    if vendor_is_valid:
+        # Finnhub returns marketCapitalization in millions (same as shareOutstanding)
+        mcap_value = vendor_mcap_raw * 1_000_000
+        mcap_cv: MarketValue | ComputedValue = MarketValue(
+            metric="market_cap",
+            value=mcap_value,
+            unit="USD",
+            vendor="finnhub",
+            symbol=symbol,
+            endpoint="profile",
+            fetched_at=now,
+            raw=profile_data if store_raw else None,
+            notes=[
+                f"Vendor-reported marketCapitalization={vendor_mcap_raw}M from profile endpoint"
+            ],
+        )
+    else:
+        # Fallback: compute from price * shares
+        if current_price is not None and shares_value is not None:
+            mcap = current_price * shares_value
+        else:
+            mcap = None
+
+        mcap_cv = ComputedValue(
+            metric="market_cap",
+            value=mcap,
+            unit="USD",
+            formula="price * shares_outstanding",
+            components={"price": price_mv, "shares_outstanding": shares_mv},
+        )
 
     company_name = profile_data.get("name", symbol)
 

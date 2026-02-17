@@ -186,6 +186,68 @@ class TestNonPositivePriceWarning:
         assert any("Non-numeric price" in w for w in snap.price.warnings)
 
 
+class TestMarketCapFromProfile:
+    """Vendor-provided market cap from profile endpoint should take precedence."""
+
+    @pytest.mark.asyncio
+    async def test_vendor_market_cap_used(self):
+        """Profile returns marketCapitalization; verify it's used instead of price * shares."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 25900.0,  # ADR: 25.9B ordinary shares
+                "marketCapitalization": 950000,  # $950B in millions
+                "name": "TSM Corp",
+            },
+            quote={"c": 200.0, "t": 1700000000},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("TSM")
+
+        # Should use vendor market cap (950000M = $950B), NOT 200 * 25.9B = $5.18T
+        assert snap.market_cap.value == 950_000_000_000
+        assert isinstance(snap.market_cap, MarketValue)
+        assert snap.market_cap.endpoint == "profile"
+
+    @pytest.mark.asyncio
+    async def test_vendor_market_cap_missing_falls_back(self):
+        """Profile omits marketCapitalization; verify fallback to price * shares."""
+        client = _mock_client(
+            profile={"shareOutstanding": 24.3, "name": "Test Corp"},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("TEST")
+
+        expected_mcap = 150.0 * 24_300_000
+        assert snap.market_cap.value == expected_mcap
+        assert isinstance(snap.market_cap, ComputedValue)
+
+    @pytest.mark.asyncio
+    async def test_vendor_market_cap_zero_falls_back(self):
+        """Profile returns marketCapitalization=0; should fall back to computed."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 10.0,
+                "marketCapitalization": 0,
+                "name": "Zero MCap Corp",
+            },
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("ZERO_MCAP")
+
+        assert isinstance(snap.market_cap, ComputedValue)
+        expected_mcap = 150.0 * 10_000_000
+        assert snap.market_cap.value == expected_mcap
+
+
 class TestFetchSnapshotsPartialFailure:
     @pytest.mark.asyncio
     async def test_partial_failure(self):

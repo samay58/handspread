@@ -127,6 +127,40 @@ class TestComponentProvenance:
         assert cv.components["prior"] is ltm1_src
 
 
+class TestSplitWarningSkipsGrowth:
+    """Growth computation should skip metrics when stock split contamination is detected."""
+
+    def test_split_warning_skips_growth(self):
+        """LTM-1 value with split warning produces value=None growth."""
+        ltm_src = SimpleNamespace(value=2.5, warnings=[])
+        ltm1_src = SimpleNamespace(
+            value=25.0,
+            warnings=[
+                "Possible stock split contamination: "
+                "LTM-derived value differs from annual by 0.1x"
+            ],
+        )
+        ltm = {"eps_diluted": ltm_src}
+        ltm1 = {"eps_diluted": ltm1_src}
+        result = compute_growth(ltm, ltm1)
+
+        assert "eps_diluted_yoy" in result
+        assert result["eps_diluted_yoy"].value is None
+        warns = result["eps_diluted_yoy"].warnings
+        assert any("stock split contamination" in w.lower() for w in warns)
+
+    def test_normal_growth_no_warning(self):
+        """Values without warnings compute growth normally."""
+        ltm_src = SimpleNamespace(value=2.5, warnings=[])
+        ltm1_src = SimpleNamespace(value=2.0, warnings=[])
+        ltm = {"eps_diluted": ltm_src}
+        ltm1 = {"eps_diluted": ltm1_src}
+        result = compute_growth(ltm, ltm1)
+
+        assert "eps_diluted_yoy" in result
+        assert abs(result["eps_diluted_yoy"].value - 0.25) < 0.001
+
+
 class TestMarginDeltas:
     def test_gross_margin_expansion(self):
         """Gross margin improves from 50% to 60% = +0.10 (1000bps)."""

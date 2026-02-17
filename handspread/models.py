@@ -56,7 +56,7 @@ class MarketSnapshot(BaseModel):
     company_name: str
     price: MarketValue
     shares_outstanding: MarketValue
-    market_cap: ComputedValue
+    market_cap: MarketValue | ComputedValue
 
     @property
     def market_cap_value(self) -> float | None:
