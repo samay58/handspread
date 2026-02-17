@@ -238,7 +238,7 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         if computed_mcap_est > 0:
             vendor_mcap_usd = vendor_mcap_raw * 1_000_000
             ratio = vendor_mcap_usd / computed_mcap_est
-            if ratio > 2.0 or ratio < 0.5:
+            if ratio > 2.0:
                 vendor_is_valid = False
                 mcap_warnings.append(
                     f"Vendor marketCapitalization ({vendor_mcap_raw}M) differs from "

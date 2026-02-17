@@ -299,6 +299,32 @@ class TestVendorMcapCurrencyCrossCheck:
         assert snap.market_cap.value == 334_000_000_000
 
     @pytest.mark.asyncio
+    async def test_non_usd_vendor_smaller_than_computed_uses_vendor(self):
+        """BABA ADR case: vendor USD mcap ($334B) is much smaller than
+        computed ($3T) because computed uses ordinary shares * ADR price.
+        The vendor value is correct; should NOT fall back to computed."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 19050.0,  # 19.05B ordinary shares
+                "marketCapitalization": 334000,  # $334B in millions (correct USD)
+                "name": "BABA Corp",
+                "currency": "CNY",
+            },
+            quote={"c": 155.0, "t": 1700000000},  # ADR price
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("BABA")
+
+        # Vendor = $334B, computed = 155 * 19.05B = $2.95T, ratio = 0.11
+        # Should still use vendor because vendor < computed means vendor is
+        # correct USD value and computed is ADR-inflated
+        assert isinstance(snap.market_cap, MarketValue)
+        assert snap.market_cap.value == 334_000_000_000
+
+    @pytest.mark.asyncio
     async def test_usd_currency_any_ratio_uses_vendor(self):
         """USD profile should always use vendor regardless of ratio."""
         client = _mock_client(
