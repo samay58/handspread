@@ -9,8 +9,8 @@ from handspread.analysis._utils import (
 )
 
 
-def _cited(value, metric="test", unit=None):
-    return SimpleNamespace(value=value, metric=metric, unit=unit)
+def _cited(value, metric="test", unit=None, concept=None):
+    return SimpleNamespace(value=value, metric=metric, unit=unit, concept=concept)
 
 
 class TestCrossCheck:
@@ -65,6 +65,19 @@ class TestComputeGrossProfit:
         val, cv, warnings = compute_gross_profit(sec)
         assert val == 600_000
         assert any("differs from reported" in w for w in warnings)
+
+    def test_cross_check_warning_includes_concepts(self):
+        sec = {
+            "revenue": _cited(1_000_000, concept="Revenues"),
+            "cost_of_revenue": _cited(400_000, concept="CostOfGoodsAndServicesSold"),
+            "gross_profit": _cited(500_000, concept="GrossProfit"),
+        }
+        val, cv, warnings = compute_gross_profit(sec)
+        assert val == 600_000
+        divergent = [w for w in warnings if "differs from reported" in w]
+        assert len(divergent) == 1
+        assert "CostOfGoodsAndServicesSold" in divergent[0]
+        assert "GrossProfit" in divergent[0]
 
     def test_cross_check_no_warning_when_matching(self):
         sec = {
@@ -122,6 +135,20 @@ class TestComputeFreeCashFlow:
         val, cv, warnings = compute_free_cash_flow(sec)
         assert val == 3_500_000
         assert any("differs from reported" in w for w in warnings)
+
+    def test_cross_check_warning_includes_concepts(self):
+        sec = {
+            "operating_cash_flow": _cited(5_000_000, concept="NetCashFromOperating"),
+            "capex": _cited(1_500_000, concept="PaymentsForCapitalExpenditures"),
+            "free_cash_flow": _cited(2_000_000, concept="FreeCashFlow"),
+        }
+        val, cv, warnings = compute_free_cash_flow(sec)
+        assert val == 3_500_000
+        divergent = [w for w in warnings if "differs from reported" in w]
+        assert len(divergent) == 1
+        assert "NetCashFromOperating" in divergent[0]
+        assert "PaymentsForCapitalExpenditures" in divergent[0]
+        assert "FreeCashFlow" in divergent[0]
 
     def test_cross_check_no_warning_when_matching(self):
         sec = {

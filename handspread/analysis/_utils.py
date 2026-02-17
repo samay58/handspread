@@ -135,10 +135,13 @@ def compute_gross_profit(
         computed_val = rev_val - cogs_val
 
         # Cross-check against reported gross_profit if available
-        reported_val, _ = extract_sec_value(sec_metrics, "gross_profit")
+        reported_val, reported_src = extract_sec_value(sec_metrics, "gross_profit")
         xcheck = _cross_check(computed_val, reported_val, "gross_profit")
         if xcheck is not None:
-            warnings.append(xcheck)
+            cogs_concept = getattr(cogs_src, "concept", None)
+            gp_concept = getattr(reported_src, "concept", None)
+            tag_detail = f" [computed from {cogs_concept}; reported from {gp_concept}]"
+            warnings.append(xcheck + tag_detail)
 
         components: dict[str, Any] = {}
         if rev_src is not None:
@@ -192,10 +195,16 @@ def compute_free_cash_flow(
         computed_val = ocf_val - capex_val
 
         # Cross-check against edgarpack's derived free_cash_flow if available
-        reported_val, _ = extract_sec_value(sec_metrics, "free_cash_flow")
+        reported_val, reported_src = extract_sec_value(sec_metrics, "free_cash_flow")
         xcheck = _cross_check(computed_val, reported_val, "free_cash_flow")
         if xcheck is not None:
-            warnings.append(xcheck)
+            ocf_concept = getattr(ocf_src, "concept", None)
+            capex_concept = getattr(capex_src, "concept", None)
+            fcf_concept = getattr(reported_src, "concept", None)
+            tag_detail = (
+                f" [computed from {ocf_concept} - {capex_concept}; reported from {fcf_concept}]"
+            )
+            warnings.append(xcheck + tag_detail)
 
         components: dict[str, Any] = {}
         if ocf_src is not None:
