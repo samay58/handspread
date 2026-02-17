@@ -7,8 +7,10 @@ This iteration resolves and hardens:
 - `hs-hgv`: Currency mismatch corrupts equity multiples and per-share labeling.
 - `hs-y44`: Empty ticker list should not silently succeed.
 - `hs-17w`: Non-positive / malformed quote price should not produce fake market cap.
-- `hs-d97`: Growth series with `None` entries should not crash or mis-index.
-- Regression coverage tasks: `hs-zzu`, `hs-4en`, `hs-fsu`, `hs-s6o`, `hs-3l4`, `hs-zyw`.
+- `hs-d97`: Growth with missing values should not crash or mis-index.
+- `hs-l81`: Growth basis switched to LTM vs LTM-1.
+- `hs-4h6`: SBC add-back added for adjusted EBITDA.
+- Regression coverage tasks: `hs-zzu`, `hs-4en`, `hs-fsu`, `hs-s6o`, `hs-3l4`, `hs-zyw`, `hs-7c1`, `hs-i35`.
 
 ## Design Principles
 
@@ -28,10 +30,16 @@ This iteration resolves and hardens:
 - Market cap is only computed when both price and shares are valid.
 
 3. Growth series contract
-- Growth uses the first two valid entries from a series (ignores `None` elements).
-- Missing usable pair yields no growth value, never an exception.
+- Growth uses LTM and LTM-1 values.
+- Missing LTM or LTM-1 values yield no growth metric, never an exception.
 
-4. Currency boundary contract
+4. Adjusted EBITDA contract
+- `adjusted_ebitda = operating_income + depreciation_amortization + stock_based_compensation`.
+- `ev_ebitda` uses adjusted EBITDA as denominator.
+- `ev_ebitda_gaap` remains available using raw `ebitda`.
+- If SBC is missing but OI and D&A exist, adjusted EBITDA still computes with warning.
+
+5. Currency boundary contract
 - Market value inputs (`price`, `market_cap`) are USD.
 - Any metric mixing USD market value with non-USD SEC value returns `None` and a warning.
 - This applies to EV-based multiples, P/E, P/B, FCF yield, and dividend yield.
@@ -45,6 +53,7 @@ This iteration resolves and hardens:
 - Cross-currency guard message generation.
 
 2. Update `handspread/analysis/multiples.py`:
+- Add adjusted EBITDA computation and `ev_ebitda_gaap`.
 - Gate mixed USD/non-USD metrics before division.
 - Return structured `ComputedValue` with warning when blocked.
 
@@ -53,14 +62,37 @@ This iteration resolves and hardens:
 - Add warning when non-USD SEC revenue is paired with market share count context.
 
 4. Update `handspread/analysis/growth.py`:
-- Sanitize lists by filtering `None` entries before YoY extraction.
+- Compute YoY from LTM vs LTM-1 values with safe missing-value handling.
 
 5. Update `handspread/engine.py` and `handspread/market/finnhub_client.py`:
 - Add empty-input validation.
 - Harden quote price parsing/validation.
+- Fetch LTM-1 metrics for growth stream.
 
 ## Test Plan
 
 - Add targeted unit tests per bug contract.
 - Add scenario-style regression tests for the six ticker cohorts with mocked SEC/market data and policy variants.
 - Run full suite + lint + format checks before close.
+
+## Landed Test Coverage
+
+Unit-level contract tests:
+
+- `tests/test_engine.py`: empty ticker list validation.
+- `tests/test_finnhub_client.py`: non-numeric and non-positive price handling.
+- `tests/test_growth.py`: LTM vs LTM-1 growth correctness and missing-input safety.
+- `tests/test_multiples.py`: adjusted EBITDA behavior plus mixed-currency blocking for market/SEC ratios.
+- `tests/test_operating.py`: SEC-currency unit propagation for `revenue_per_share`.
+
+Scenario-level regressions:
+
+- `tests/test_scenario_regressions.py`
+  - Big Tech baseline (`hs-zzu`)
+  - Banks/financials (`hs-4en`)
+  - Negative-equity buyback names (`hs-fsu`)
+  - REIT lease path (`hs-s6o`)
+  - Pre-revenue/deep-loss names (`hs-3l4`)
+  - Conglomerates/complex structures (`hs-zyw`)
+  - Foreign ADR multi-currency stress (`hs-7c1`)
+  - Chinese ADR CNY cluster (`hs-i35`)

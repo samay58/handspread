@@ -7,7 +7,7 @@ Handspread builds comparable company analysis from primary data. It pulls financ
 For each ticker, Handspread fetches three inputs at the same time:
 
 SEC EDGAR (LTM metrics)  -----\
-SEC EDGAR (annual series) -----> Per-Company Analysis
+SEC EDGAR (LTM-1 metrics) -----> Per-Company Analysis
 Finnhub (market data)    -----/
 
 In code, this happens with `asyncio.gather(...)` inside `analyze_comps()`. Each stream can fail without taking down the whole run. If one company fails a stream, the result object keeps partial data and records the error.
@@ -19,6 +19,28 @@ In code, this happens with `asyncio.gather(...)` inside `analyze_comps()`. Each 
 - We use explicit value types for provenance. This makes it obvious which numbers are vendor inputs, SEC facts, or derived math.
 - We keep EV construction policy-driven. Analysts differ on leases, debt treatment, and non-operating investments, and we need to show those choices instead of hiding them.
 - We keep market-data fallbacks simple but annotated with warnings. Unit ambiguity happens on vendor endpoints; we document assumptions at the value level so bad inputs are visible.
+
+## Robustness Contracts (2026-02-17)
+
+These are now explicit invariants, not best-effort behavior:
+
+- Empty comp sets are rejected: `analyze_comps([])` raises `ValueError`.
+- Quote price sanitation is strict:
+  - Price must be numeric and `> 0`.
+  - Non-numeric, zero, and negative prices are converted to missing values with warnings.
+  - Market cap is not computed from invalid price input.
+- Growth series sanitation:
+  - Growth is computed from LTM vs LTM-1 values.
+  - Missing LTM or LTM-1 values are skipped safely.
+- Currency boundaries are fail-closed:
+  - SEC non-USD + market USD blocks EV bridge arithmetic.
+  - All market/SEC mixed multiples (EV multiples, P/E, P/B, FCF yield, dividend yield) return `None` with warnings.
+  - SEC-only ratios still compute.
+  - `revenue_per_share` unit is derived from SEC filing currency (for example `EUR/shares`), not hardcoded.
+- Adjusted EBITDA handling:
+  - `ev_ebitda` uses adjusted EBITDA (`operating_income + depreciation_amortization + stock_based_compensation`).
+  - `ev_ebitda_gaap` remains available for raw GAAP EBITDA.
+  - Missing SBC does not block adjusted EBITDA; it emits a warning.
 
 ## What Gets Computed
 
@@ -46,16 +68,19 @@ Example:
 Multiples divide value by an operating or earnings measure.
 
 - `EV / Revenue = 4,370.5 / 187.0 = 23.4x`
-- `EV / EBITDA = 4,370.5 / 112.7 = 38.8x`
+- `EV / EBITDA (adjusted) = EV / (Operating Income + D&A + SBC)`
+- `EV / EBITDA (GAAP) = EV / EBITDA`
 - `P/E = Market Cap / Net Income = 4,422.6 / 99.2 = 44.6x`
 - `FCF Yield = FCF / Market Cap = 77.2 / 4,422.6 = 1.7%`
 
+If SEC and market currencies differ (for example JPY filings vs USD market cap), these mixed metrics are intentionally set to `None` with explicit warnings instead of emitting misleading values.
+
 ### Growth
 
-Growth uses annual series values from SEC data.
+Growth uses LTM vs LTM-1 values from SEC data.
 
-- Revenue this year: `$130B`
-- Revenue prior year: `$100B`
+- Revenue LTM: `$130B`
+- Revenue LTM-1: `$100B`
 - `Revenue YoY = (130 - 100) / 100 = 30%`
 
 The same pattern is used for EBITDA, net income, EPS diluted, and depreciation/amortization.
@@ -69,6 +94,8 @@ Operating metrics show cost structure and capital efficiency.
 - `Capex % of revenue = Capex / Revenue`
 - `Revenue per share = Revenue / Shares`
 - `ROIC = Operating Income * (1 - tax_rate) / (Debt + Equity)`
+
+`Revenue per share` now carries the SEC currency in its unit (`USD/shares`, `JPY/shares`, `CNY/shares`, etc.) to avoid unit-label drift.
 
 Example ROIC:
 
@@ -113,7 +140,7 @@ Formula assembly follows the selected policy and records each included component
 - `handspread/market/finnhub_client.py`: fetches and caches Finnhub market inputs.
 - `handspread/analysis/enterprise_value.py`: builds EV bridge objects.
 - `handspread/analysis/multiples.py`: computes valuation multiples and yields.
-- `handspread/analysis/growth.py`: computes YoY growth from annual series.
+- `handspread/analysis/growth.py`: computes YoY growth from LTM vs LTM-1.
 - `handspread/analysis/operating.py`: computes operating ratios and ROIC.
 - `handspread/models.py`: data models for market, cited, and computed values.
 - `handspread/config.py`: environment-backed runtime settings.
@@ -149,3 +176,20 @@ NVIDIA CORP (NVDA) | CIK: 0001045810
     pe: 44.6x
     fcf_yield: 1.7%
 ```
+
+## Testing Strategy
+
+The test suite is split into two layers:
+
+- Contract tests for edge conditions in each module (`tests/test_engine.py`, `tests/test_finnhub_client.py`, `tests/test_growth.py`, `tests/test_multiples.py`, `tests/test_operating.py`).
+- Scenario regressions in `tests/test_scenario_regressions.py` for production-like cohorts:
+  - Big Tech baseline
+  - Financials
+  - Negative-equity buyback names
+  - REIT lease-heavy structures
+  - Pre-revenue and deep-loss names
+  - Conglomerates with equity-method investments
+  - Foreign ADR currency mismatch stress
+  - Chinese ADR CNY cluster
+
+This combination guards both local formula correctness and system-level behavior under realistic data patterns.
