@@ -7,9 +7,9 @@ from handspread.analysis.operating import compute_operating
 from handspread.models import ComputedValue, MarketSnapshot, MarketValue
 
 
-def _cited(value, metric="test"):
+def _cited(value, metric="test", unit=None):
     """Stub CitedValue via SimpleNamespace (only .value is read by operating)."""
-    return SimpleNamespace(value=value, metric=metric)
+    return SimpleNamespace(value=value, metric=metric, unit=unit)
 
 
 def _make_snapshot(price=100.0, shares=1_000_000):
@@ -81,6 +81,14 @@ class TestRevenuePerShare:
         sec = {"revenue": _cited(10_000_000)}
         result = compute_operating(sec, None)
         assert "revenue_per_share" not in result
+
+    def test_revenue_per_share_uses_sec_currency_unit(self):
+        sec = {"revenue": _cited(10_000_000, unit="JPY")}
+        market = _make_snapshot(shares=1_000_000)
+        result = compute_operating(sec, market)
+
+        assert result["revenue_per_share"].unit == "JPY/shares"
+        assert any("cannot mix currencies" in w for w in result["revenue_per_share"].warnings)
 
 
 class TestROIC:

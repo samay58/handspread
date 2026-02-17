@@ -72,6 +72,9 @@ async def analyze_comps(
     Returns one CompanyAnalysis per ticker. Failures are isolated per-company
     and recorded in the errors list rather than raising.
     """
+    if not tickers:
+        raise ValueError("tickers must contain at least one symbol")
+
     valuation_ts = datetime.now(UTC)
 
     sec_task = comps(tickers, REQUIRED_METRICS, period)

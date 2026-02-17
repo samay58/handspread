@@ -168,6 +168,23 @@ class TestNonPositivePriceWarning:
         assert snap.market_cap.value is None
         assert any("Negative or zero price" in w for w in snap.price.warnings)
 
+    @pytest.mark.asyncio
+    async def test_non_numeric_price_treated_as_none(self):
+        """Malformed price should be treated as missing, not crash."""
+        client = _mock_client(
+            quote={"c": "not-a-number", "t": 1700000000},
+            profile={"shareOutstanding": 10.0, "name": "BadPrice Co"},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("BADPRICE")
+
+        assert snap.price.value is None
+        assert snap.market_cap.value is None
+        assert any("Non-numeric price" in w for w in snap.price.warnings)
+
 
 class TestFetchSnapshotsPartialFailure:
     @pytest.mark.asyncio

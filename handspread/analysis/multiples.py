@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue, EVBridge, MarketSnapshot
-from ._utils import extract_sec_value
+from ._utils import cross_currency_warning, detect_sec_currency, extract_sec_value
 
 
 def _safe_divide(
@@ -67,6 +67,31 @@ def _safe_divide(
     )
 
 
+def _blocked_for_currency(
+    metric: str,
+    formula: str,
+    sec_currency: str,
+    num_source: Any = None,
+    den_source: Any = None,
+    unit: str = "x",
+) -> ComputedValue:
+    """Return a structured None metric when SEC and market currencies cannot be mixed."""
+    components: dict[str, Any] = {}
+    if num_source is not None:
+        components["numerator"] = num_source
+    if den_source is not None:
+        components["denominator"] = den_source
+
+    return ComputedValue(
+        metric=metric,
+        value=None,
+        unit=unit,
+        formula=formula,
+        components=components,
+        warnings=[cross_currency_warning(sec_currency, metric)],
+    )
+
+
 def compute_multiples(
     ev_bridge: EVBridge,
     market: MarketSnapshot,
@@ -90,6 +115,8 @@ def compute_multiples(
             "dividends_per_share",
         )
     }
+    sec_currency = detect_sec_currency(sec_metrics, keys=tuple(sec_values.keys()))
+    has_market_currency_mismatch = sec_currency is not None and sec_currency != "USD"
 
     ev_defs = [
         ("ev_revenue", "revenue", "enterprise_value / revenue"),
@@ -99,6 +126,15 @@ def compute_multiples(
     ]
     for metric_name, den_key, formula in ev_defs:
         den_val, den_src = sec_values[den_key]
+        if has_market_currency_mismatch:
+            result[metric_name] = _blocked_for_currency(
+                metric=metric_name,
+                formula=formula,
+                sec_currency=sec_currency,
+                num_source=ev_bridge.enterprise_value,
+                den_source=den_src,
+            )
+            continue
         result[metric_name] = _safe_divide(
             ev_val,
             den_val,
@@ -114,6 +150,15 @@ def compute_multiples(
     ]
     for metric_name, den_key, formula in equity_defs:
         den_val, den_src = sec_values[den_key]
+        if has_market_currency_mismatch:
+            result[metric_name] = _blocked_for_currency(
+                metric=metric_name,
+                formula=formula,
+                sec_currency=sec_currency,
+                num_source=market.market_cap,
+                den_source=den_src,
+            )
+            continue
         result[metric_name] = _safe_divide(
             mcap_val,
             den_val,
@@ -124,25 +169,45 @@ def compute_multiples(
         )
 
     fcf_val, fcf_src = sec_values["free_cash_flow"]
-    result["fcf_yield"] = _safe_divide(
-        fcf_val,
-        mcap_val,
-        "fcf_yield",
-        "free_cash_flow / market_cap",
-        fcf_src,
-        market.market_cap,
-        unit="pure",
-    )
+    if has_market_currency_mismatch:
+        result["fcf_yield"] = _blocked_for_currency(
+            metric="fcf_yield",
+            formula="free_cash_flow / market_cap",
+            sec_currency=sec_currency,
+            num_source=fcf_src,
+            den_source=market.market_cap,
+            unit="pure",
+        )
+    else:
+        result["fcf_yield"] = _safe_divide(
+            fcf_val,
+            mcap_val,
+            "fcf_yield",
+            "free_cash_flow / market_cap",
+            fcf_src,
+            market.market_cap,
+            unit="pure",
+        )
 
     dps_val, dps_src = sec_values["dividends_per_share"]
-    result["dividend_yield"] = _safe_divide(
-        dps_val,
-        price_val,
-        "dividend_yield",
-        "dividends_per_share / price",
-        dps_src,
-        market.price,
-        unit="pure",
-    )
+    if has_market_currency_mismatch:
+        result["dividend_yield"] = _blocked_for_currency(
+            metric="dividend_yield",
+            formula="dividends_per_share / price",
+            sec_currency=sec_currency,
+            num_source=dps_src,
+            den_source=market.price,
+            unit="pure",
+        )
+    else:
+        result["dividend_yield"] = _safe_divide(
+            dps_val,
+            price_val,
+            "dividend_yield",
+            "dividends_per_share / price",
+            dps_src,
+            market.price,
+            unit="pure",
+        )
 
     return result

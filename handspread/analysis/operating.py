@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue, MarketSnapshot
-from ._utils import extract_sec_value
+from ._utils import cross_currency_warning, extract_sec_value, infer_currency_from_source
 
 
 def _pct_of_revenue(
@@ -37,6 +37,7 @@ def compute_operating(
     """Compute operating efficiency metrics."""
     result: dict[str, ComputedValue] = {}
     rev_val, rev_src = extract_sec_value(sec_metrics, "revenue")
+    rev_currency = infer_currency_from_source(rev_src)
 
     # R&D as % of revenue
     cv = _pct_of_revenue(sec_metrics, "rd_expense", "rd_pct_revenue", rev_val, rev_src)
@@ -57,12 +58,17 @@ def compute_operating(
     if market is not None and rev_val is not None:
         shares_val = market.shares_outstanding.value
         if shares_val is not None and shares_val > 0:
+            revenue_per_share_currency = rev_currency or "USD"
+            warnings: list[str] = []
+            if rev_currency is not None and rev_currency != "USD":
+                warnings.append(cross_currency_warning(rev_currency, "revenue_per_share"))
             result["revenue_per_share"] = ComputedValue(
                 metric="revenue_per_share",
                 value=rev_val / shares_val,
-                unit="USD/shares",
+                unit=f"{revenue_per_share_currency}/shares",
                 formula="revenue / shares_outstanding",
                 components={"revenue": rev_src, "shares_outstanding": market.shares_outstanding},
+                warnings=warnings,
             )
 
     # ROIC approximation: operating_income * (1 - tax_rate) / (total_debt + stockholders_equity)

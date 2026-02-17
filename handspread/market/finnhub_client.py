@@ -81,6 +81,37 @@ async def _fetch_profile(client: finnhub.Client, symbol: str) -> dict:
     return await _cached_call("profile", symbol, client.company_profile2, symbol=symbol)
 
 
+def _parse_positive_price(raw_price: Any) -> tuple[float | None, list[str]]:
+    """Parse quote price into a strictly positive float with warnings."""
+    warnings: list[str] = []
+    if raw_price is None:
+        return None, warnings
+
+    if isinstance(raw_price, bool):
+        warnings.append(f"Non-numeric price from quote endpoint ({raw_price!r}); treated as None")
+        return None, warnings
+
+    parsed: float | None = None
+    if isinstance(raw_price, (int, float)):
+        parsed = float(raw_price)
+    else:
+        try:
+            parsed = float(raw_price)
+        except (TypeError, ValueError):
+            warnings.append(
+                f"Non-numeric price from quote endpoint ({raw_price!r}); treated as None"
+            )
+            return None, warnings
+
+    if parsed <= 0:
+        warnings.append(
+            f"Negative or zero price from quote endpoint ({raw_price}); treated as None"
+        )
+        return None, warnings
+
+    return parsed, warnings
+
+
 async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
     """Fetch current price, shares outstanding, and market cap for a ticker."""
     client = _get_client()
@@ -94,13 +125,7 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
     )
 
     # Price from quote endpoint
-    current_price = quote_data.get("c")
-    price_warnings: list[str] = []
-    if current_price is not None and current_price <= 0:
-        price_warnings.append(
-            f"Negative or zero price from quote endpoint ({current_price}); treated as None"
-        )
-        current_price = None
+    current_price, price_warnings = _parse_positive_price(quote_data.get("c"))
 
     price_mv = MarketValue(
         metric="price",

@@ -189,3 +189,10 @@ class TestTimeoutHandling:
         assert r.symbol == "NVDA"
         assert any("SEC" in e for e in r.errors)
         assert any("Market" in e for e in r.errors)
+
+
+class TestInputValidation:
+    @pytest.mark.asyncio
+    async def test_empty_tickers_raises(self):
+        with pytest.raises(ValueError, match="at least one symbol"):
+            await analyze_comps([])

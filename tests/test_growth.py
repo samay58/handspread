@@ -115,3 +115,18 @@ class TestThreeYearSeriesUsesFirstTwo:
 
         # Growth = (300 - 200) / 200 = 0.5
         assert abs(result["revenue_yoy"].value - 0.5) < 0.001
+
+
+class TestSeriesWithNoneEntries:
+    def test_none_entry_between_valid_years(self):
+        metrics = {"revenue": [_cited(120), None, _cited(100)]}
+        result = compute_growth(metrics)
+
+        assert "revenue_yoy" in result
+        assert abs(result["revenue_yoy"].value - 0.2) < 0.001
+
+    def test_not_enough_valid_points_after_filter(self):
+        metrics = {"revenue": [None, _cited(100), None]}
+        result = compute_growth(metrics)
+
+        assert "revenue_yoy" not in result

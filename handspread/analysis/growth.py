@@ -7,6 +7,16 @@ from typing import Any
 from ..models import ComputedValue
 
 
+def _first_two_valid_points(series: list | None) -> tuple[Any, Any] | None:
+    """Return first two non-None entries from a yearly series."""
+    if series is None:
+        return None
+    usable = [item for item in series if item is not None]
+    if len(usable) < 2:
+        return None
+    return usable[0], usable[1]
+
+
 def _yoy_growth(
     metric_name: str,
     series: list | None,
@@ -15,11 +25,11 @@ def _yoy_growth(
 
     Expects series = [current_year, prior_year, ...] (most recent first).
     """
-    if series is None or len(series) < 2:
+    points = _first_two_valid_points(series)
+    if points is None:
         return None
 
-    current = series[0]
-    prior = series[1]
+    current, prior = points
 
     curr_val = current.value if hasattr(current, "value") else None
     prior_val = prior.value if hasattr(prior, "value") else None

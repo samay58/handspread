@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue, EVBridge, EVPolicy, MarketSnapshot
-from ._utils import extract_sec_value
+from ._utils import cross_currency_warning, detect_sec_currency, extract_sec_value
 
 
 def _apply_component(
@@ -58,23 +58,14 @@ def build_ev_bridge(
     )
 
     # Check for currency mismatch between SEC data and market data (USD)
-    sec_currency = None
-    for cv_or_list in sec_metrics.values():
-        cv = cv_or_list[0] if isinstance(cv_or_list, list) else cv_or_list
-        if cv is not None and hasattr(cv, "unit") and cv.unit:
-            sec_currency = cv.unit
-            break
-
+    sec_currency = detect_sec_currency(sec_metrics)
     if sec_currency is not None and sec_currency != "USD":
         bridge.enterprise_value = ComputedValue(
             metric="enterprise_value",
             value=None,
             unit="USD",
             formula="equity_value + debt - cash + adjustments",
-            warnings=[
-                f"SEC data is in {sec_currency} but market data is in USD; "
-                "cannot mix currencies in EV bridge"
-            ],
+            warnings=[cross_currency_warning(sec_currency, "EV bridge")],
         )
         return bridge
 

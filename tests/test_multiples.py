@@ -7,9 +7,9 @@ from handspread.analysis.multiples import compute_multiples
 from handspread.models import ComputedValue, EVBridge, MarketSnapshot, MarketValue
 
 
-def _cited(value, metric="test"):
+def _cited(value, metric="test", unit=None):
     """Stub CitedValue via SimpleNamespace (only .value is read by multiples)."""
-    return SimpleNamespace(value=value, metric=metric)
+    return SimpleNamespace(value=value, metric=metric, unit=unit)
 
 
 def _make_ev_bridge(ev_value):
@@ -151,3 +151,33 @@ class TestNoneEVProducesNoneMultiples:
         assert result["ev_revenue"].value is None
         assert result["ev_ebitda"].value is None
         assert any("Numerator unavailable" in w for w in result["ev_revenue"].warnings)
+
+
+class TestCurrencyMismatch:
+    def test_non_usd_sec_data_blocks_market_cross_metrics(self):
+        bridge = _make_ev_bridge(10_000_000_000)
+        market = _make_snapshot(price=100.0, shares=1_000_000)
+        sec = {
+            "revenue": _cited(2_000_000_000, unit="JPY"),
+            "ebitda": _cited(1_000_000_000, unit="JPY"),
+            "operating_income": _cited(800_000_000, unit="JPY"),
+            "free_cash_flow": _cited(700_000_000, unit="JPY"),
+            "net_income": _cited(600_000_000, unit="JPY"),
+            "stockholders_equity": _cited(4_000_000_000, unit="JPY"),
+            "dividends_per_share": _cited(100, unit="JPY/shares"),
+        }
+
+        result = compute_multiples(bridge, market, sec)
+
+        for metric in (
+            "ev_revenue",
+            "ev_ebitda",
+            "ev_ebit",
+            "ev_fcf",
+            "pe",
+            "price_book",
+            "fcf_yield",
+            "dividend_yield",
+        ):
+            assert result[metric].value is None
+            assert any("cannot mix currencies" in w for w in result[metric].warnings)
