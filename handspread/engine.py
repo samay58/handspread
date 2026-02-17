@@ -38,6 +38,7 @@ REQUIRED_METRICS = [
     "preferred_stock",
     "noncontrolling_interests",
     "equity_method_investments",
+    "stock_based_compensation",
     "operating_cash_flow",
     "capex",
     "free_cash_flow",
@@ -66,7 +67,7 @@ async def analyze_comps(
 
     Three concurrent data streams:
     1. SEC LTM/LFY financials (edgarpack.comps)
-    2. SEC annual series for growth (edgarpack.comps with annual:2)
+    2. SEC LTM-1 for growth (edgarpack.comps with ltm-1)
     3. Finnhub market data (price, shares outstanding)
 
     Returns one CompanyAnalysis per ticker. Failures are isolated per-company
@@ -78,7 +79,7 @@ async def analyze_comps(
     valuation_ts = datetime.now(UTC)
 
     sec_task = comps(tickers, REQUIRED_METRICS, period)
-    growth_task = comps(tickers, GROWTH_METRICS, "annual:2")
+    growth_task = comps(tickers, GROWTH_METRICS, "ltm-1")
     market_task = fetch_market_snapshots(tickers)
 
     try:
@@ -163,11 +164,11 @@ def _build_single(
         except Exception as e:
             errors.append(f"Multiples computation failed: {e}")
 
-    # Growth
+    # Growth (LTM vs LTM-1)
     growth = {}
     if growth_result is not None:
         try:
-            growth = compute_growth(growth_result.metrics)
+            growth = compute_growth(sec_metrics, growth_result.metrics)
         except Exception as e:
             errors.append(f"Growth computation failed: {e}")
 

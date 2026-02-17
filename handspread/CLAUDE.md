@@ -26,7 +26,7 @@ FINNHUB_API_KEY=<key> EDGARPACK_USER_AGENT="Name email@example.com" python examp
 Three concurrent streams feed `handspread/engine.py`:
 
 1. SEC LTM financials via `edgarpack.query.comps()`
-2. SEC annual series via `edgarpack.query.comps(period="annual:2")`
+2. SEC LTM-1 for growth via `edgarpack.query.comps(period="ltm-1")`
 3. Finnhub market data via `handspread/market/finnhub_client.py`
 
 `analyze_comps()` fans out those calls, applies a timeout, and builds each `CompanyAnalysis` with isolated per-company errors.
@@ -43,7 +43,7 @@ Three concurrent streams feed `handspread/engine.py`:
 - `handspread/analysis/_utils.py`: shared SEC value extraction helper
 - `handspread/analysis/enterprise_value.py`: EV bridge construction and policy handling
 - `handspread/analysis/multiples.py`: EV and equity multiples plus yields
-- `handspread/analysis/growth.py`: YoY growth from annual series
+- `handspread/analysis/growth.py`: YoY growth from LTM vs LTM-1
 - `handspread/analysis/operating.py`: operating ratios, revenue/share, and ROIC
 
 ### Provenance Model

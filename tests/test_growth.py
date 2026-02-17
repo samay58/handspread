@@ -1,4 +1,4 @@
-"""Tests for year-over-year growth computation."""
+"""Tests for year-over-year growth computation (LTM vs LTM-1)."""
 
 from types import SimpleNamespace
 
@@ -6,127 +6,119 @@ from handspread.analysis.growth import compute_growth
 
 
 def _cited(value):
-    """Stub CitedValue with .value attribute for growth series tests."""
+    """Stub CitedValue with .value attribute for growth tests."""
     return SimpleNamespace(value=value)
 
 
-class TestYoYGrowth:
-    def test_basic_revenue_growth(self):
-        metrics = {"revenue": [_cited(120), _cited(100)]}
-        result = compute_growth(metrics)
+class TestBasicGrowth:
+    def test_revenue_growth(self):
+        ltm = {"revenue": _cited(120)}
+        ltm1 = {"revenue": _cited(100)}
+        result = compute_growth(ltm, ltm1)
 
         assert "revenue_yoy" in result
         assert abs(result["revenue_yoy"].value - 0.2) < 0.001
 
     def test_negative_growth(self):
-        metrics = {"revenue": [_cited(80), _cited(100)]}
-        result = compute_growth(metrics)
+        ltm = {"revenue": _cited(80)}
+        ltm1 = {"revenue": _cited(100)}
+        result = compute_growth(ltm, ltm1)
 
         assert abs(result["revenue_yoy"].value - (-0.2)) < 0.001
 
     def test_multiple_metrics(self):
-        metrics = {
-            "revenue": [_cited(110), _cited(100)],
-            "net_income": [_cited(22), _cited(20)],
-            "ebitda": [_cited(55), _cited(50)],
-            "eps_diluted": [_cited(2.2), _cited(2.0)],
+        ltm = {
+            "revenue": _cited(110),
+            "net_income": _cited(22),
+            "ebitda": _cited(55),
+            "eps_diluted": _cited(2.2),
         }
-        result = compute_growth(metrics)
+        ltm1 = {
+            "revenue": _cited(100),
+            "net_income": _cited(20),
+            "ebitda": _cited(50),
+            "eps_diluted": _cited(2.0),
+        }
+        result = compute_growth(ltm, ltm1)
 
         assert len(result) == 4
         assert abs(result["revenue_yoy"].value - 0.1) < 0.001
         assert abs(result["eps_diluted_yoy"].value - 0.1) < 0.001
 
+    def test_zero_growth(self):
+        ltm = {"revenue": _cited(100)}
+        ltm1 = {"revenue": _cited(100)}
+        result = compute_growth(ltm, ltm1)
 
-class TestMissingPrior:
-    def test_single_value_skipped(self):
-        metrics = {"revenue": [_cited(100)]}
-        result = compute_growth(metrics)
+        assert result["revenue_yoy"].value == 0.0
+
+
+class TestMissingMetrics:
+    def test_missing_from_ltm_skipped(self):
+        ltm = {}
+        ltm1 = {"revenue": _cited(100)}
+        result = compute_growth(ltm, ltm1)
         assert "revenue_yoy" not in result
 
-    def test_none_metric_skipped(self):
-        metrics = {"revenue": None}
-        result = compute_growth(metrics)
+    def test_missing_from_ltm1_skipped(self):
+        ltm = {"revenue": _cited(120)}
+        ltm1 = {}
+        result = compute_growth(ltm, ltm1)
         assert "revenue_yoy" not in result
 
-    def test_empty_series_skipped(self):
-        metrics = {"revenue": []}
-        result = compute_growth(metrics)
+    def test_both_empty(self):
+        result = compute_growth({}, {})
+        assert result == {}
+
+    def test_none_value_in_ltm_skipped(self):
+        ltm = {"revenue": _cited(None)}
+        ltm1 = {"revenue": _cited(100)}
+        result = compute_growth(ltm, ltm1)
+        assert "revenue_yoy" not in result
+
+    def test_none_value_in_ltm1_skipped(self):
+        ltm = {"revenue": _cited(120)}
+        ltm1 = {"revenue": _cited(None)}
+        result = compute_growth(ltm, ltm1)
         assert "revenue_yoy" not in result
 
 
-class TestNegativePrior:
+class TestEdgeCases:
     def test_negative_prior_uses_abs(self):
-        metrics = {"net_income": [_cited(10), _cited(-20)]}
-        result = compute_growth(metrics)
+        ltm = {"net_income": _cited(10)}
+        ltm1 = {"net_income": _cited(-20)}
+        result = compute_growth(ltm, ltm1)
 
         # (10 - (-20)) / abs(-20) = 30/20 = 1.5
         assert abs(result["net_income_yoy"].value - 1.5) < 0.001
         assert any("negative" in w for w in result["net_income_yoy"].warnings)
 
     def test_zero_prior_returns_none(self):
-        metrics = {"revenue": [_cited(100), _cited(0)]}
-        result = compute_growth(metrics)
+        ltm = {"revenue": _cited(100)}
+        ltm1 = {"revenue": _cited(0)}
+        result = compute_growth(ltm, ltm1)
 
         assert result["revenue_yoy"].value is None
         assert any("zero" in w for w in result["revenue_yoy"].warnings)
 
-
-class TestNegativeToNegativeTransition:
     def test_negative_to_negative(self):
         """Both years negative: (-10 - (-20)) / abs(-20) = 10/20 = 0.5."""
-        metrics = {"net_income": [_cited(-10), _cited(-20)]}
-        result = compute_growth(metrics)
+        ltm = {"net_income": _cited(-10)}
+        ltm1 = {"net_income": _cited(-20)}
+        result = compute_growth(ltm, ltm1)
 
         assert abs(result["net_income_yoy"].value - 0.5) < 0.001
         assert any("negative" in w for w in result["net_income_yoy"].warnings)
 
 
-class TestDerivedValueSkipped:
-    def test_derived_value_in_series_skipped(self):
-        """Non-list values (e.g. DerivedValue) should be skipped, not crash."""
-        derived = SimpleNamespace(value=100, metric="ebitda", unit="USD")
-        metrics = {
-            "revenue": [_cited(110), _cited(100)],
-            "ebitda": derived,  # single object, not a list
-        }
-        result = compute_growth(metrics)
+class TestComponentProvenance:
+    def test_components_carry_sources(self):
+        ltm_src = _cited(120)
+        ltm1_src = _cited(100)
+        ltm = {"revenue": ltm_src}
+        ltm1 = {"revenue": ltm1_src}
+        result = compute_growth(ltm, ltm1)
 
-        assert "revenue_yoy" in result
-        assert "ebitda_yoy" not in result
-
-    def test_string_value_skipped(self):
-        """Arbitrary non-list types should be skipped gracefully."""
-        metrics = {
-            "revenue": [_cited(120), _cited(100)],
-            "eps_diluted": "not_a_list",
-        }
-        result = compute_growth(metrics)
-
-        assert "revenue_yoy" in result
-        assert "eps_diluted_yoy" not in result
-
-
-class TestThreeYearSeriesUsesFirstTwo:
-    def test_three_year_series(self):
-        """Series length 3: only [0] and [1] used for YoY growth."""
-        metrics = {"revenue": [_cited(300), _cited(200), _cited(100)]}
-        result = compute_growth(metrics)
-
-        # Growth = (300 - 200) / 200 = 0.5
-        assert abs(result["revenue_yoy"].value - 0.5) < 0.001
-
-
-class TestSeriesWithNoneEntries:
-    def test_none_entry_between_valid_years(self):
-        metrics = {"revenue": [_cited(120), None, _cited(100)]}
-        result = compute_growth(metrics)
-
-        assert "revenue_yoy" in result
-        assert abs(result["revenue_yoy"].value - 0.2) < 0.001
-
-    def test_not_enough_valid_points_after_filter(self):
-        metrics = {"revenue": [None, _cited(100), None]}
-        result = compute_growth(metrics)
-
-        assert "revenue_yoy" not in result
+        cv = result["revenue_yoy"]
+        assert cv.components["current"] is ltm_src
+        assert cv.components["prior"] is ltm1_src

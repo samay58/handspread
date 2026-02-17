@@ -66,6 +66,8 @@ def _ltm_metrics(unit: str = "USD", **overrides):
         "revenue": _cited(20_000_000_000, "revenue", unit),
         "ebitda": _cited(6_000_000_000, "ebitda", unit),
         "operating_income": _cited(5_000_000_000, "operating_income", unit),
+        "depreciation_amortization": _cited(1_000_000_000, "depreciation_amortization", unit),
+        "stock_based_compensation": _cited(500_000_000, "stock_based_compensation", unit),
         "free_cash_flow": _cited(4_000_000_000, "free_cash_flow", unit),
         "net_income": _cited(3_000_000_000, "net_income", unit),
         "stockholders_equity": _cited(15_000_000_000, "stockholders_equity", unit),
@@ -88,15 +90,13 @@ def _ltm_metrics(unit: str = "USD", **overrides):
 
 
 def _growth_metrics(unit: str = "USD"):
+    """LTM-1 values: single CitedValue per metric (prior year trailing twelve months)."""
     return {
-        "revenue": [_cited(110.0, "revenue", unit), _cited(100.0, "revenue", unit)],
-        "ebitda": [_cited(55.0, "ebitda", unit), _cited(50.0, "ebitda", unit)],
-        "net_income": [_cited(22.0, "net_income", unit), _cited(20.0, "net_income", unit)],
-        "eps_diluted": [_cited(2.2, "eps_diluted", unit), _cited(2.0, "eps_diluted", unit)],
-        "depreciation_amortization": [
-            _cited(10.0, "depreciation_amortization", unit),
-            _cited(9.0, "depreciation_amortization", unit),
-        ],
+        "revenue": _cited(18_000_000_000, "revenue", unit),
+        "ebitda": _cited(5_000_000_000, "ebitda", unit),
+        "net_income": _cited(2_500_000_000, "net_income", unit),
+        "eps_diluted": _cited(2.0, "eps_diluted", unit),
+        "depreciation_amortization": _cited(900_000_000, "depreciation_amortization", unit),
     }
 
 
@@ -109,7 +109,7 @@ async def _run_analysis(
 ):
     async def _mock_comps(requested_tickers, _requested_metrics, period):
         assert requested_tickers == tickers
-        return growth_data if period == "annual:2" else ltm_data
+        return growth_data if period == "ltm-1" else ltm_data
 
     with (
         patch("handspread.engine.comps", new=AsyncMock(side_effect=_mock_comps)),
@@ -130,7 +130,7 @@ async def test_big_tech_baseline_golden_path():
         if ticker == "AAPL":
             overrides["stockholders_equity"] = _cited(-2_000_000_000, "stockholders_equity", "USD")
         ltm[ticker] = _query_result(ticker, _ltm_metrics(**overrides))
-        growth[ticker] = _query_result(ticker, _growth_metrics(), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=100.0, shares=1_000_000_000)
 
     results = await _run_analysis(tickers, ltm, growth, market)
@@ -171,7 +171,7 @@ async def test_financials_show_expected_metric_gaps():
                 dividends_per_share=None,
             ),
         )
-        growth[ticker] = _query_result(ticker, _growth_metrics(), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=80.0, shares=2_000_000_000)
 
     results = await _run_analysis(tickers, ltm, growth, market)
@@ -201,7 +201,7 @@ async def test_negative_equity_buyback_names():
             overrides["stockholders_equity"] = _cited(-1_000_000_000, "stockholders_equity", "USD")
 
         ltm[ticker] = _query_result(ticker, _ltm_metrics(**overrides))
-        growth[ticker] = _query_result(ticker, _growth_metrics(), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=120.0, shares=300_000_000)
 
     results = await _run_analysis(tickers, ltm, growth, market)
@@ -230,7 +230,7 @@ async def test_reits_exercise_lease_inclusion_path():
                 ),
             ),
         )
-        growth[ticker] = _query_result(ticker, _growth_metrics(), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=90.0, shares=500_000_000)
 
     results = await _run_analysis(
@@ -265,7 +265,7 @@ async def test_pre_revenue_and_deep_loss_names():
                 stockholders_equity=_cited(8_000_000_000, "stockholders_equity", "USD"),
             ),
         )
-        growth[ticker] = _query_result(ticker, _growth_metrics(), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=60.0, shares=1_000_000_000)
 
     results = await _run_analysis(tickers, ltm, growth, market)
@@ -299,7 +299,7 @@ async def test_conglomerates_with_equity_method_adjustment():
             }
 
         ltm[ticker] = _query_result(ticker, _ltm_metrics(**overrides))
-        growth[ticker] = _query_result(ticker, _growth_metrics(), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=500.0, shares=2_000_000_000)
 
     results = await _run_analysis(
@@ -332,7 +332,7 @@ async def test_foreign_adr_currency_mismatch_behavior():
     for ticker in tickers:
         currency = unit_map[ticker]
         ltm[ticker] = _query_result(ticker, _ltm_metrics(unit=currency))
-        growth[ticker] = _query_result(ticker, _growth_metrics(unit=currency), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(unit=currency), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=100.0, shares=1_000_000_000)
 
     results = await _run_analysis(tickers, ltm, growth, market)
@@ -361,7 +361,7 @@ async def test_chinese_adr_cluster_cny_behavior():
     for ticker in tickers:
         currency = unit_map[ticker]
         ltm[ticker] = _query_result(ticker, _ltm_metrics(unit=currency))
-        growth[ticker] = _query_result(ticker, _growth_metrics(unit=currency), period="annual:2")
+        growth[ticker] = _query_result(ticker, _growth_metrics(unit=currency), period="ltm-1")
         market[ticker] = _snapshot(ticker, price=70.0, shares=1_200_000_000)
 
     results = await _run_analysis(tickers, ltm, growth, market)

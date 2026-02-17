@@ -92,6 +92,45 @@ def _blocked_for_currency(
     )
 
 
+def _compute_adjusted_ebitda(
+    sec_metrics: dict[str, Any],
+) -> tuple[float | None, ComputedValue | None, list[str]]:
+    """Compute adjusted EBITDA = operating_income + D&A + SBC.
+
+    Returns (adj_ebitda_value, adj_ebitda_computed_value, warnings).
+    """
+    oi_val, oi_src = extract_sec_value(sec_metrics, "operating_income")
+    da_val, da_src = extract_sec_value(sec_metrics, "depreciation_amortization")
+    sbc_val, sbc_src = extract_sec_value(sec_metrics, "stock_based_compensation")
+
+    warnings: list[str] = []
+
+    if oi_val is None or da_val is None:
+        return None, None, warnings
+
+    adj_val = oi_val + da_val + (sbc_val or 0)
+    if sbc_val is None:
+        warnings.append("SBC unavailable; adjusted EBITDA equals GAAP EBITDA")
+
+    components: dict[str, Any] = {}
+    if oi_src is not None:
+        components["operating_income"] = oi_src
+    if da_src is not None:
+        components["depreciation_amortization"] = da_src
+    if sbc_src is not None:
+        components["stock_based_compensation"] = sbc_src
+
+    cv = ComputedValue(
+        metric="adjusted_ebitda",
+        value=adj_val,
+        unit="USD",
+        formula="operating_income + depreciation_amortization + stock_based_compensation",
+        components=components,
+        warnings=warnings,
+    )
+    return adj_val, cv, warnings
+
+
 def compute_multiples(
     ev_bridge: EVBridge,
     market: MarketSnapshot,
@@ -118,9 +157,14 @@ def compute_multiples(
     sec_currency = detect_sec_currency(sec_metrics, keys=tuple(sec_values.keys()))
     has_market_currency_mismatch = sec_currency is not None and sec_currency != "USD"
 
+    # Adjusted EBITDA for the primary EV/EBITDA multiple
+    adj_ebitda_val, adj_ebitda_cv, _ = _compute_adjusted_ebitda(sec_metrics)
+    if adj_ebitda_cv is not None:
+        result["adjusted_ebitda"] = adj_ebitda_cv
+
     ev_defs = [
         ("ev_revenue", "revenue", "enterprise_value / revenue"),
-        ("ev_ebitda", "ebitda", "enterprise_value / ebitda"),
+        ("ev_ebitda_gaap", "ebitda", "enterprise_value / ebitda"),
         ("ev_ebit", "operating_income", "enterprise_value / operating_income"),
         ("ev_fcf", "free_cash_flow", "enterprise_value / free_cash_flow"),
     ]
@@ -142,6 +186,25 @@ def compute_multiples(
             formula,
             ev_bridge.enterprise_value,
             den_src,
+        )
+
+    # EV/EBITDA (adjusted) uses adjusted EBITDA as denominator
+    if has_market_currency_mismatch:
+        result["ev_ebitda"] = _blocked_for_currency(
+            metric="ev_ebitda",
+            formula="enterprise_value / adjusted_ebitda",
+            sec_currency=sec_currency,
+            num_source=ev_bridge.enterprise_value,
+            den_source=adj_ebitda_cv,
+        )
+    else:
+        result["ev_ebitda"] = _safe_divide(
+            ev_val,
+            adj_ebitda_val,
+            "ev_ebitda",
+            "enterprise_value / adjusted_ebitda",
+            ev_bridge.enterprise_value,
+            adj_ebitda_cv,
         )
 
     equity_defs = [
