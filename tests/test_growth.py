@@ -136,8 +136,7 @@ class TestSplitWarningSkipsGrowth:
         ltm1_src = SimpleNamespace(
             value=25.0,
             warnings=[
-                "Possible stock split contamination: "
-                "LTM-derived value differs from annual by 0.1x"
+                "Possible stock split contamination: LTM-derived value differs from annual by 0.1x"
             ],
         )
         ltm = {"eps_diluted": ltm_src}

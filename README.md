@@ -77,6 +77,8 @@ Ambiguous market-unit edge cases get conservative treatment with warnings attach
   - `ev_ebitda` uses adjusted EBITDA (`OI + D&A + SBC`) as denominator.
   - `ev_ebitda_gaap` preserves the raw GAAP EBITDA denominator.
   - If SBC is missing, adjusted EBITDA still computes with a warning.
+- Market cap prefers vendor-reported value from Finnhub profile for ADR accuracy. Falls back to `price * shares` when the vendor field is absent or non-positive.
+- Per-share growth metrics are skipped when stock split contamination is detected (LTM-derived value differs from annual by more than 5x). Returns `value=None` with a warning instead of publishing a misleading growth rate.
 
 ## Provenance Model
 

@@ -10,6 +10,10 @@ This iteration resolves and hardens:
 - `hs-d97`: Growth with missing values should not crash or mis-index.
 - `hs-l81`: Growth basis switched to LTM vs LTM-1.
 - `hs-4h6`: SBC add-back added for adjusted EBITDA.
+- `hs-0tf`: ADR market cap uses vendor-reported value from Finnhub profile.
+- `edgarpack-c1b`: Broader XBRL debt tags for captive finance companies.
+- `edgarpack-pek`: Annual-only filers return prior FY for LTM-1 instead of same year.
+- `edgarpack-6e6`: Stock split contamination detection and growth skip.
 - Regression coverage tasks: `hs-zzu`, `hs-4en`, `hs-fsu`, `hs-s6o`, `hs-3l4`, `hs-zyw`, `hs-7c1`, `hs-i35`.
 
 ## Design Principles
@@ -46,6 +50,19 @@ This iteration resolves and hardens:
 - SEC-only operating ratios remain computable for non-USD reporters.
 - `revenue_per_share` unit is derived from SEC currency (`USD/shares`, `JPY/shares`, etc.), not hardcoded.
 
+6. Market cap source contract
+- Finnhub's vendor-reported `marketCapitalization` from the profile endpoint is preferred over computing `price * shares_outstanding`.
+- This is necessary for ADR tickers where Finnhub returns total underlying shares (not ADR-equivalent shares), which produces an inflated market cap when multiplied by the US-listed ADR price.
+- If the vendor field is missing, zero, or non-positive, the system falls back to computing from price and shares.
+- When the vendor field is used, the resulting `market_cap` is a `MarketValue` (not `ComputedValue`), reflecting its vendor-provided origin.
+
+7. Stock split contamination contract
+- Per-share metrics (`eps_diluted`, any metric containing `per_share`) get a sanity check in edgarpack's LTM computation.
+- If the LTM-derived value differs from the latest annual filing by more than 5x or less than 0.2x, a warning is attached: "Possible stock split contamination."
+- Handspread's growth module checks for this warning before computing YoY percentage change.
+- If either the LTM or LTM-1 source carries a split contamination warning, that metric's growth is set to `value=None` with a note explaining why.
+- Non-per-share metrics (revenue, EBITDA, net income) are never flagged for split contamination.
+
 ## Implementation Outline
 
 1. Add shared helpers in `handspread/analysis/_utils.py` for:
@@ -81,8 +98,9 @@ Unit-level contract tests:
 
 - `tests/test_engine.py`: empty ticker list validation.
 - `tests/test_finnhub_client.py`: non-numeric and non-positive price handling.
-- `tests/test_growth.py`: LTM vs LTM-1 growth correctness and missing-input safety.
+- `tests/test_growth.py`: LTM vs LTM-1 growth correctness, missing-input safety, margin deltas, and stock split contamination skip.
 - `tests/test_multiples.py`: adjusted EBITDA behavior plus mixed-currency blocking for market/SEC ratios.
+- `tests/test_finnhub_client.py`: vendor market cap preference, missing/zero fallback, non-positive price handling.
 - `tests/test_operating.py`: SEC-currency unit propagation for `revenue_per_share`.
 
 Scenario-level regressions:
@@ -96,3 +114,6 @@ Scenario-level regressions:
   - Conglomerates/complex structures (`hs-zyw`)
   - Foreign ADR multi-currency stress (`hs-7c1`)
   - Chinese ADR CNY cluster (`hs-i35`)
+  - ADR vendor market cap preference
+  - Captive finance consolidated debt
+  - Annual-only filer growth

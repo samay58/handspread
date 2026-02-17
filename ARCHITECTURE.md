@@ -87,7 +87,9 @@ Growth uses LTM vs LTM-1 values from SEC data.
 - Revenue LTM-1: `$100B`
 - `Revenue YoY = (130 - 100) / 100 = 30%`
 
-The same pattern is used for EBITDA, net income, EPS diluted, and depreciation/amortization.
+The same pattern is used for EBITDA, net income, EPS diluted, and depreciation/amortization. Margin deltas (gross margin change, EBITDA margin change) are also computed as simple differences of the LTM and LTM-1 ratios.
+
+If a per-share metric carries a stock split contamination warning from edgarpack (LTM-derived value differs from the annual filing by more than 5x), growth computation skips that metric and returns `value=None` with a warning. This prevents publishing misleading growth rates when split-adjusted and pre-split values get mixed in the LTM window.
 
 ### Operating Metrics
 
@@ -112,8 +114,8 @@ Example ROIC:
 
 Handspread has three value types.
 
-- `MarketValue`: raw Finnhub datapoint. Example: price from `quote` endpoint with fetch timestamp.
-- `CitedValue`: raw SEC datapoint from edgarpack with filing metadata.
+- `MarketValue`: vendor datapoint from Finnhub. Examples: price from the `quote` endpoint, shares from the `profile` endpoint, or vendor-reported market cap from the `profile` endpoint (used for ADR accuracy instead of computing price times shares).
+- `CitedValue`: SEC filing datapoint from edgarpack with filing metadata. May carry `warnings` for edge cases like stock split contamination.
 - `ComputedValue`: derived metric with a formula string and the source values used.
 
 This is the core quality bar for the project. We can explain any number from output back to source.
@@ -141,10 +143,10 @@ Formula assembly follows the selected policy and records each included component
 ## How the Code is Organized
 
 - `handspread/engine.py`: orchestrates async fetches and assembles company outputs.
-- `handspread/market/finnhub_client.py`: fetches and caches Finnhub market inputs.
+- `handspread/market/finnhub_client.py`: fetches and caches Finnhub market inputs. Prefers vendor-reported market cap from the profile endpoint for ADR accuracy; falls back to `price * shares` when the vendor field is absent.
 - `handspread/analysis/enterprise_value.py`: builds EV bridge objects.
 - `handspread/analysis/multiples.py`: computes valuation multiples and yields.
-- `handspread/analysis/growth.py`: computes YoY growth from LTM vs LTM-1.
+- `handspread/analysis/growth.py`: computes YoY growth from LTM vs LTM-1. Skips metrics flagged with stock split contamination warnings.
 - `handspread/analysis/operating.py`: computes operating ratios and ROIC.
 - `handspread/models.py`: data models for market, cited, and computed values.
 - `handspread/config.py`: environment-backed runtime settings.

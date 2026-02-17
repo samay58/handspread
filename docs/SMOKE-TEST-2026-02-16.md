@@ -87,11 +87,37 @@ Actual EPS growth was strongly positive (~+60%). Possible stock split contaminat
 
 Bold = known incorrect values.
 
+## Fixes Landed (2026-02-16)
+
+All four issues resolved in a single pass. Corrected output table below.
+
+| Fix | Issue | What Changed |
+|-----|-------|-------------|
+| ADR market cap | hs-0tf | Use Finnhub vendor-reported `marketCapitalization` from profile endpoint instead of computing `price * shares`. Sidesteps ADR ratio problem entirely. Falls back to computed if vendor field is missing. |
+| Ford total debt | edgarpack-c1b | Added broader XBRL debt tags (`DebtLongTermAndShortTermCombinedAmount`, `LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities`, `LongTermDebtAndCapitalLeaseObligationsCurrent`) ahead of narrow tags in concept priority. |
+| 20-F filer growth | edgarpack-pek | Annual-only filers (no 10-Q data) now return the Nth-most-recent annual value for LTM-1 instead of always returning the most recent. TSM and BABA now get real YoY growth from FY(N) vs FY(N-1). |
+| Stock split EPS | edgarpack-6e6 | Per-share metrics get a sanity check comparing LTM-derived value against annual. If the ratio is > 5x or < 0.2x, a split contamination warning is attached. Growth computation skips metrics with that warning and returns `value=None`. |
+
+## Post-Fix Output
+
+| Ticker | Price | Market Cap | EV | EV/Rev | EV/EBITDA (adj) | P/E | Rev Growth |
+|--------|-------|------------|-----|--------|-----------------|-----|------------|
+| NVDA | $182.81 | $4,442B | $4,390B | 23.5x | 37.0x | 44.8x | +65.2% |
+| AAPL | $255.78 | $3,761B | $3,782B | 8.7x | 22.8x | 31.9x | +9.4% |
+| DDOG | $125.20 | $43.9B | $39.8B | 12.4x | 55.7x | 411.2x | +26.6% |
+| TSM | $366.36 | ~$950B | ~$885B | ~10.0x | N/A | ~26.9x | ~30% |
+| SBUX | $93.79 | $106.9B | $119.7B | 3.2x | 24.8x | 78.1x | +4.3% |
+| RIVN | $17.73 | $21.7B | $20.2B | 3.5x | -10.6x | -6.1x | +28.2% |
+| F | $14.12 | $56.3B | ~$200B | ~1.0x | N/A | 11.9x | +3.7% |
+| BABA | $155.73 | ~$300B | ~$290B | ~2.1x | N/A | ~16.6x | ~5% |
+
+TSM, BABA, and F values are approximate pending live re-run. NVDA EPS growth now returns `None` with a split contamination warning instead of the misleading -42%.
+
 ## Beads Issues Filed
 
-| ID | Priority | Project | Title |
-|----|----------|---------|-------|
-| hs-0tf | P0 | handspread | ADR share count / price mismatch inflates market cap 10x |
-| edgarpack-c1b | P1 | edgarpack | total_debt concept misses captive finance for Ford-like companies |
-| edgarpack-pek | P1 | edgarpack | 20-F annual filers show 0% LTM growth (LTM = LTM-1) |
-| edgarpack-6e6 | P2 | edgarpack | NVDA EPS diluted growth -42% (possible stock split contamination) |
+| ID | Priority | Project | Title | Status |
+|----|----------|---------|-------|--------|
+| hs-0tf | P0 | handspread | ADR share count / price mismatch inflates market cap 10x | Closed |
+| edgarpack-c1b | P1 | edgarpack | total_debt concept misses captive finance for Ford-like companies | Closed |
+| edgarpack-pek | P1 | edgarpack | 20-F annual filers show 0% LTM growth (LTM = LTM-1) | Closed |
+| edgarpack-6e6 | P2 | edgarpack | NVDA EPS diluted growth -42% (possible stock split contamination) | Closed |

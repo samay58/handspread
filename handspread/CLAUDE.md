@@ -43,14 +43,14 @@ Three concurrent streams feed `handspread/engine.py`:
 - `handspread/analysis/_utils.py`: shared helpers: SEC value extraction, currency detection, adjusted EBITDA
 - `handspread/analysis/enterprise_value.py`: EV bridge construction and policy handling
 - `handspread/analysis/multiples.py`: EV and equity multiples plus yields
-- `handspread/analysis/growth.py`: YoY growth rates and margin deltas (decimal change, not percentage of margin)
+- `handspread/analysis/growth.py`: YoY growth rates and margin deltas (decimal change, not percentage of margin). Skips metrics with stock split contamination warnings from edgarpack
 - `handspread/analysis/operating.py`: margin ratios, expense ratios, revenue/share, and ROIC
 
 ### Provenance Model
 
-- `MarketValue`: direct vendor value from Finnhub
-- `CitedValue`: SEC filing value from edgarpack
-- `ComputedValue`: derived value with formula and components
+- `MarketValue`: direct vendor value from Finnhub. Also used for vendor-reported market cap (ADR accuracy)
+- `CitedValue`: SEC filing value from edgarpack. May carry `warnings` (for example, split contamination)
+- `ComputedValue`: derived value with formula and components. Used for market cap when vendor field is absent
 
 ## API Notes
 

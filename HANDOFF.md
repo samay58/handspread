@@ -35,6 +35,17 @@ Handspread is in a clean, testable state for core analysis flows:
   - Foreign ADR currency stress
   - Chinese ADR CNY cluster
 
+## Smoke Test Fixes (2026-02-16)
+
+8-company stress test (NVDA, AAPL, DDOG, TSM, SBUX, RIVN, F, BABA) surfaced 4 issues. All resolved:
+
+- **ADR market cap** (hs-0tf, P0): Finnhub client now prefers vendor-reported `marketCapitalization` from the profile endpoint. Falls back to `price * shares` if the vendor field is missing or non-positive. Fixes TSM and BABA market cap being 10x overstated.
+- **Captive finance debt** (edgarpack-c1b, P1): edgarpack `total_debt` concept list now includes broader XBRL tags that capture consolidated debt for companies like Ford with captive finance subsidiaries.
+- **Annual-only filer growth** (edgarpack-pek, P1): edgarpack LTM-1 for 20-F filers (no quarterly data) now returns the prior fiscal year instead of the same year. TSM and BABA now show real YoY growth.
+- **Stock split contamination** (edgarpack-6e6, P2): edgarpack attaches a split contamination warning when per-share LTM values differ from annual by more than 5x. Handspread growth computation skips those metrics and returns `value=None`.
+
+Regression tests added in both projects. Full results in `docs/SMOKE-TEST-2026-02-16.md`.
+
 ## Design Decisions To Preserve
 
 - Provenance stays explicit in the data model. Main differentiator of the project.

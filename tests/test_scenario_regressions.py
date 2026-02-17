@@ -399,23 +399,41 @@ async def test_adr_market_cap_uses_vendor():
     # Vendor market cap is $950B (correct), computed would be $5.18T (wrong)
     now = datetime(2026, 2, 17, 12, 0, tzinfo=UTC)
     price_mv = MarketValue(
-        metric="price", value=200.0, unit="USD", vendor="finnhub",
-        symbol="TSM", endpoint="quote", fetched_at=now,
+        metric="price",
+        value=200.0,
+        unit="USD",
+        vendor="finnhub",
+        symbol="TSM",
+        endpoint="quote",
+        fetched_at=now,
     )
     shares_mv = MarketValue(
-        metric="shares_outstanding", value=25_900_000_000, unit="shares",
-        vendor="finnhub", symbol="TSM", endpoint="profile", fetched_at=now,
+        metric="shares_outstanding",
+        value=25_900_000_000,
+        unit="shares",
+        vendor="finnhub",
+        symbol="TSM",
+        endpoint="profile",
+        fetched_at=now,
     )
     # Vendor-reported market cap (not computed)
     mcap_mv = MarketValue(
-        metric="market_cap", value=950_000_000_000, unit="USD",
-        vendor="finnhub", symbol="TSM", endpoint="profile", fetched_at=now,
+        metric="market_cap",
+        value=950_000_000_000,
+        unit="USD",
+        vendor="finnhub",
+        symbol="TSM",
+        endpoint="profile",
+        fetched_at=now,
         notes=["Vendor-reported marketCapitalization=950000M from profile endpoint"],
     )
     market = {
         "TSM": MarketSnapshot(
-            symbol="TSM", company_name="TSM Corp",
-            price=price_mv, shares_outstanding=shares_mv, market_cap=mcap_mv,
+            symbol="TSM",
+            company_name="TSM Corp",
+            price=price_mv,
+            shares_outstanding=shares_mv,
+            market_cap=mcap_mv,
         )
     }
     results = await _run_analysis(tickers, ltm, growth, market)
