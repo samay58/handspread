@@ -46,13 +46,16 @@ REQUIRED_METRICS = [
     "dividends_per_share",
 ]
 
-# Metrics needed for growth (annual series)
+# Metrics needed for growth (annual series) and margin deltas
 GROWTH_METRICS = [
     "revenue",
     "ebitda",
     "net_income",
     "eps_diluted",
     "depreciation_amortization",
+    "gross_profit",
+    "operating_income",
+    "stock_based_compensation",
 ]
 
 

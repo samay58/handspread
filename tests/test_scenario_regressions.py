@@ -64,6 +64,7 @@ def _query_result(symbol: str, metrics: dict, period: str = "ltm") -> QueryResul
 def _ltm_metrics(unit: str = "USD", **overrides):
     base = {
         "revenue": _cited(20_000_000_000, "revenue", unit),
+        "gross_profit": _cited(14_000_000_000, "gross_profit", unit),
         "ebitda": _cited(6_000_000_000, "ebitda", unit),
         "operating_income": _cited(5_000_000_000, "operating_income", unit),
         "depreciation_amortization": _cited(1_000_000_000, "depreciation_amortization", unit),
@@ -97,6 +98,9 @@ def _growth_metrics(unit: str = "USD"):
         "net_income": _cited(2_500_000_000, "net_income", unit),
         "eps_diluted": _cited(2.0, "eps_diluted", unit),
         "depreciation_amortization": _cited(900_000_000, "depreciation_amortization", unit),
+        "gross_profit": _cited(12_000_000_000, "gross_profit", unit),
+        "operating_income": _cited(4_500_000_000, "operating_income", unit),
+        "stock_based_compensation": _cited(400_000_000, "stock_based_compensation", unit),
     }
 
 
@@ -142,8 +146,14 @@ async def test_big_tech_baseline_golden_path():
         assert result.ev_bridge.enterprise_value.value is not None
         assert "revenue_yoy" in result.growth
         assert "net_income_yoy" in result.growth
+        assert "gross_margin_chg" in result.growth
+        assert "ebitda_margin_chg" in result.growth
+        assert "adjusted_ebitda_margin_chg" in result.growth
         assert "rd_pct_revenue" in result.operating
         assert "sga_pct_revenue" in result.operating
+        assert "gross_margin" in result.operating
+        assert "ebitda_margin" in result.operating
+        assert "adjusted_ebitda_margin" in result.operating
 
     aapl = next(r for r in results if r.symbol == "AAPL")
     assert aapl.multiples["price_book"].value is not None
@@ -182,6 +192,8 @@ async def test_financials_show_expected_metric_gaps():
         assert result.multiples["ev_ebitda"].value is None
         assert result.multiples["ev_ebit"].value is None
         assert result.multiples["ev_fcf"].value is None
+        assert "ebitda_margin" not in result.operating
+        assert "adjusted_ebitda_margin" not in result.operating
 
 
 @pytest.mark.asyncio

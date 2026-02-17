@@ -3,7 +3,8 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from handspread.analysis.multiples import _compute_adjusted_ebitda, compute_multiples
+from handspread.analysis._utils import compute_adjusted_ebitda
+from handspread.analysis.multiples import compute_multiples
 from handspread.models import ComputedValue, EVBridge, MarketSnapshot, MarketValue
 
 
@@ -131,7 +132,7 @@ class TestAdjustedEBITDA:
             "depreciation_amortization": _cited(100),
             "stock_based_compensation": _cited(50),
         }
-        val, cv, warnings = _compute_adjusted_ebitda(sec)
+        val, cv, warnings = compute_adjusted_ebitda(sec)
         assert val == 650
         assert cv.value == 650
         assert cv.metric == "adjusted_ebitda"
@@ -143,7 +144,7 @@ class TestAdjustedEBITDA:
             "operating_income": _cited(500),
             "depreciation_amortization": _cited(100),
         }
-        val, cv, warnings = _compute_adjusted_ebitda(sec)
+        val, cv, warnings = compute_adjusted_ebitda(sec)
         assert val == 600
         assert any("SBC unavailable" in w for w in warnings)
 
@@ -152,7 +153,7 @@ class TestAdjustedEBITDA:
             "depreciation_amortization": _cited(100),
             "stock_based_compensation": _cited(50),
         }
-        val, cv, warnings = _compute_adjusted_ebitda(sec)
+        val, cv, warnings = compute_adjusted_ebitda(sec)
         assert val is None
         assert cv is None
 
@@ -161,7 +162,7 @@ class TestAdjustedEBITDA:
             "operating_income": _cited(500),
             "stock_based_compensation": _cited(50),
         }
-        val, cv, warnings = _compute_adjusted_ebitda(sec)
+        val, cv, warnings = compute_adjusted_ebitda(sec)
         assert val is None
         assert cv is None
 
@@ -171,7 +172,7 @@ class TestAdjustedEBITDA:
             "depreciation_amortization": _cited(100),
             "stock_based_compensation": _cited(50),
         }
-        _, cv, _ = _compute_adjusted_ebitda(sec)
+        _, cv, _ = compute_adjusted_ebitda(sec)
         assert "operating_income" in cv.components
         assert "depreciation_amortization" in cv.components
         assert "stock_based_compensation" in cv.components

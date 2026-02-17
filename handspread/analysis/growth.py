@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue
-from ._utils import extract_sec_value
+from ._utils import compute_adjusted_ebitda, extract_sec_value
 
 GROWTH_KEYS = ["revenue", "ebitda", "net_income", "eps_diluted", "depreciation_amortization"]
 
@@ -54,11 +54,57 @@ def _safe_growth(
     )
 
 
+def _compute_margin(
+    metrics: dict[str, Any],
+    numerator_key: str,
+) -> tuple[float | None, dict[str, Any]]:
+    """Extract a margin ratio (numerator / revenue) from a single period's metrics.
+
+    Returns (margin_value, components_dict). Returns (None, {}) if data missing.
+    """
+    num_val, num_src = extract_sec_value(metrics, numerator_key)
+    rev_val, rev_src = extract_sec_value(metrics, "revenue")
+    if num_val is None or rev_val is None or rev_val == 0:
+        return None, {}
+    components: dict[str, Any] = {}
+    if num_src is not None:
+        components[numerator_key] = num_src
+    if rev_src is not None:
+        components["revenue"] = rev_src
+    return num_val / rev_val, components
+
+
+def _margin_delta(
+    metric_name: str,
+    ltm_margin: float | None,
+    ltm1_margin: float | None,
+    ltm_components: dict[str, Any],
+    ltm1_components: dict[str, Any],
+) -> ComputedValue | None:
+    """Compute margin change as raw decimal delta (0.02 = +200bps)."""
+    if ltm_margin is None or ltm1_margin is None:
+        return None
+    components: dict[str, Any] = {}
+    if ltm_components:
+        components["current"] = ltm_components
+    if ltm1_components:
+        components["prior"] = ltm1_components
+    return ComputedValue(
+        metric=f"{metric_name}_chg",
+        value=ltm_margin - ltm1_margin,
+        unit="pure",
+        formula=f"{metric_name}_ltm - {metric_name}_ltm1",
+        components=components,
+    )
+
+
 def compute_growth(
     ltm_metrics: dict[str, Any],
     ltm1_metrics: dict[str, Any],
 ) -> dict[str, ComputedValue]:
     """Compute YoY growth for key metrics from LTM vs LTM-1 query results.
+
+    Also computes margin deltas (bps change) for gross, EBITDA, and adjusted EBITDA.
 
     ltm_metrics: single CitedValue per key from the LTM period query.
     ltm1_metrics: single CitedValue per key from the LTM-1 period query.
@@ -71,5 +117,45 @@ def compute_growth(
         cv = _safe_growth(key, ltm_val, ltm1_val, ltm_src, ltm1_src)
         if cv is not None:
             result[f"{key}_yoy"] = cv
+
+    # Margin deltas: gross and EBITDA
+    for num_key, margin_name in [
+        ("gross_profit", "gross_margin"),
+        ("ebitda", "ebitda_margin"),
+    ]:
+        ltm_m, ltm_c = _compute_margin(ltm_metrics, num_key)
+        ltm1_m, ltm1_c = _compute_margin(ltm1_metrics, num_key)
+        cv = _margin_delta(margin_name, ltm_m, ltm1_m, ltm_c, ltm1_c)
+        if cv is not None:
+            result[f"{margin_name}_chg"] = cv
+
+    # Adjusted EBITDA margin delta
+    ltm_rev_val, ltm_rev_src = extract_sec_value(ltm_metrics, "revenue")
+    ltm1_rev_val, ltm1_rev_src = extract_sec_value(ltm1_metrics, "revenue")
+
+    ltm_adj_val, ltm_adj_cv, _ = compute_adjusted_ebitda(ltm_metrics)
+    ltm1_adj_val, ltm1_adj_cv, _ = compute_adjusted_ebitda(ltm1_metrics)
+
+    ltm_adj_margin = None
+    ltm_adj_components: dict[str, Any] = {}
+    if ltm_adj_val is not None and ltm_rev_val and ltm_rev_val != 0:
+        ltm_adj_margin = ltm_adj_val / ltm_rev_val
+        ltm_adj_components = {"adjusted_ebitda": ltm_adj_cv, "revenue": ltm_rev_src}
+
+    ltm1_adj_margin = None
+    ltm1_adj_components: dict[str, Any] = {}
+    if ltm1_adj_val is not None and ltm1_rev_val and ltm1_rev_val != 0:
+        ltm1_adj_margin = ltm1_adj_val / ltm1_rev_val
+        ltm1_adj_components = {"adjusted_ebitda": ltm1_adj_cv, "revenue": ltm1_rev_src}
+
+    cv = _margin_delta(
+        "adjusted_ebitda_margin",
+        ltm_adj_margin,
+        ltm1_adj_margin,
+        ltm_adj_components,
+        ltm1_adj_components,
+    )
+    if cv is not None:
+        result["adjusted_ebitda_margin_chg"] = cv
 
     return result

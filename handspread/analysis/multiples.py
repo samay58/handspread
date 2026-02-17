@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue, EVBridge, MarketSnapshot
-from ._utils import cross_currency_warning, detect_sec_currency, extract_sec_value
+from ._utils import (
+    compute_adjusted_ebitda,
+    cross_currency_warning,
+    detect_sec_currency,
+    extract_sec_value,
+)
 
 
 def _safe_divide(
@@ -92,45 +97,6 @@ def _blocked_for_currency(
     )
 
 
-def _compute_adjusted_ebitda(
-    sec_metrics: dict[str, Any],
-) -> tuple[float | None, ComputedValue | None, list[str]]:
-    """Compute adjusted EBITDA = operating_income + D&A + SBC.
-
-    Returns (adj_ebitda_value, adj_ebitda_computed_value, warnings).
-    """
-    oi_val, oi_src = extract_sec_value(sec_metrics, "operating_income")
-    da_val, da_src = extract_sec_value(sec_metrics, "depreciation_amortization")
-    sbc_val, sbc_src = extract_sec_value(sec_metrics, "stock_based_compensation")
-
-    warnings: list[str] = []
-
-    if oi_val is None or da_val is None:
-        return None, None, warnings
-
-    adj_val = oi_val + da_val + (sbc_val or 0)
-    if sbc_val is None:
-        warnings.append("SBC unavailable; adjusted EBITDA equals GAAP EBITDA")
-
-    components: dict[str, Any] = {}
-    if oi_src is not None:
-        components["operating_income"] = oi_src
-    if da_src is not None:
-        components["depreciation_amortization"] = da_src
-    if sbc_src is not None:
-        components["stock_based_compensation"] = sbc_src
-
-    cv = ComputedValue(
-        metric="adjusted_ebitda",
-        value=adj_val,
-        unit="USD",
-        formula="operating_income + depreciation_amortization + stock_based_compensation",
-        components=components,
-        warnings=warnings,
-    )
-    return adj_val, cv, warnings
-
-
 def compute_multiples(
     ev_bridge: EVBridge,
     market: MarketSnapshot,
@@ -158,7 +124,7 @@ def compute_multiples(
     has_market_currency_mismatch = sec_currency is not None and sec_currency != "USD"
 
     # Adjusted EBITDA for the primary EV/EBITDA multiple
-    adj_ebitda_val, adj_ebitda_cv, _ = _compute_adjusted_ebitda(sec_metrics)
+    adj_ebitda_val, adj_ebitda_cv, _ = compute_adjusted_ebitda(sec_metrics)
     if adj_ebitda_cv is not None:
         result["adjusted_ebitda"] = adj_ebitda_cv
 

@@ -151,3 +151,68 @@ class TestNegativeOperatingIncomeROIC:
 
         assert result["roic"].value is not None
         assert result["roic"].value < 0
+
+
+class TestMargins:
+    def test_gross_margin(self):
+        sec = {"revenue": _cited(1_000_000), "gross_profit": _cited(600_000)}
+        result = compute_operating(sec)
+        assert abs(result["gross_margin"].value - 0.6) < 0.001
+        assert result["gross_margin"].unit == "pure"
+
+    def test_ebitda_margin(self):
+        sec = {"revenue": _cited(1_000_000), "ebitda": _cited(250_000)}
+        result = compute_operating(sec)
+        assert abs(result["ebitda_margin"].value - 0.25) < 0.001
+
+    def test_net_margin(self):
+        sec = {"revenue": _cited(1_000_000), "net_income": _cited(100_000)}
+        result = compute_operating(sec)
+        assert abs(result["net_margin"].value - 0.1) < 0.001
+
+    def test_fcf_margin(self):
+        sec = {"revenue": _cited(1_000_000), "free_cash_flow": _cited(200_000)}
+        result = compute_operating(sec)
+        assert abs(result["fcf_margin"].value - 0.2) < 0.001
+
+    def test_adjusted_ebitda_margin(self):
+        sec = {
+            "revenue": _cited(1_000_000),
+            "operating_income": _cited(200_000),
+            "depreciation_amortization": _cited(50_000),
+            "stock_based_compensation": _cited(30_000),
+        }
+        result = compute_operating(sec)
+        # adj EBITDA = 200k + 50k + 30k = 280k, margin = 0.28
+        assert abs(result["adjusted_ebitda_margin"].value - 0.28) < 0.001
+        assert result["adjusted_ebitda_margin"].unit == "pure"
+
+    def test_missing_numerator_skips_margin(self):
+        sec = {"revenue": _cited(1_000_000)}
+        result = compute_operating(sec)
+        assert "gross_margin" not in result
+        assert "ebitda_margin" not in result
+        assert "net_margin" not in result
+        assert "fcf_margin" not in result
+
+    def test_missing_revenue_skips_all_margins(self):
+        sec = {"gross_profit": _cited(600_000), "ebitda": _cited(250_000)}
+        result = compute_operating(sec)
+        assert "gross_margin" not in result
+        assert "ebitda_margin" not in result
+
+    def test_adjusted_ebitda_margin_skips_when_oi_missing(self):
+        sec = {
+            "revenue": _cited(1_000_000),
+            "depreciation_amortization": _cited(50_000),
+        }
+        result = compute_operating(sec)
+        assert "adjusted_ebitda_margin" not in result
+
+    def test_adjusted_ebitda_margin_skips_when_da_missing(self):
+        sec = {
+            "revenue": _cited(1_000_000),
+            "operating_income": _cited(200_000),
+        }
+        result = compute_operating(sec)
+        assert "adjusted_ebitda_margin" not in result

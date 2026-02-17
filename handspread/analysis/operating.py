@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue, MarketSnapshot
-from ._utils import cross_currency_warning, extract_sec_value, infer_currency_from_source
+from ._utils import (
+    compute_adjusted_ebitda,
+    cross_currency_warning,
+    extract_sec_value,
+    infer_currency_from_source,
+)
 
 
 def _pct_of_revenue(
@@ -53,6 +58,37 @@ def compute_operating(
     cv = _pct_of_revenue(sec_metrics, "capex", "capex_pct_revenue", rev_val, rev_src)
     if cv is not None:
         result["capex_pct_revenue"] = cv
+
+    # Margin ratios
+    cv = _pct_of_revenue(sec_metrics, "gross_profit", "gross_margin", rev_val, rev_src)
+    if cv is not None:
+        result["gross_margin"] = cv
+
+    cv = _pct_of_revenue(sec_metrics, "ebitda", "ebitda_margin", rev_val, rev_src)
+    if cv is not None:
+        result["ebitda_margin"] = cv
+
+    cv = _pct_of_revenue(sec_metrics, "net_income", "net_margin", rev_val, rev_src)
+    if cv is not None:
+        result["net_margin"] = cv
+
+    cv = _pct_of_revenue(sec_metrics, "free_cash_flow", "fcf_margin", rev_val, rev_src)
+    if cv is not None:
+        result["fcf_margin"] = cv
+
+    # Adjusted EBITDA margin (OI + D&A + SBC) / revenue
+    if rev_val is not None and rev_val != 0:
+        adj_val, adj_cv, adj_warnings = compute_adjusted_ebitda(sec_metrics)
+        if adj_val is not None:
+            components: dict[str, Any] = {"adjusted_ebitda": adj_cv, "revenue": rev_src}
+            result["adjusted_ebitda_margin"] = ComputedValue(
+                metric="adjusted_ebitda_margin",
+                value=adj_val / rev_val,
+                unit="pure",
+                formula="adjusted_ebitda / revenue",
+                components=components,
+                warnings=list(adj_warnings),
+            )
 
     # Revenue per share
     if market is not None and rev_val is not None:
