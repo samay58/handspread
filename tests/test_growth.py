@@ -160,6 +160,74 @@ class TestSplitWarningSkipsGrowth:
         assert abs(result["eps_diluted_yoy"].value - 0.25) < 0.001
 
 
+class TestSplitDivergenceFlagsEps:
+    """Cross-window split detection: revenue up + EPS down = split contamination."""
+
+    def test_revenue_up_eps_down_flags_split(self):
+        """NVDA-like: revenue +65%, EPS -42% -> EPS growth set to None."""
+        ltm = {
+            "revenue": _cited(187_000_000_000),
+            "eps_diluted": _cited(2.94),
+        }
+        ltm1 = {
+            "revenue": _cited(100_000_000_000),
+            "eps_diluted": _cited(5.07),
+        }
+        result = compute_growth(ltm, ltm1)
+
+        assert "revenue_yoy" in result
+        assert result["revenue_yoy"].value is not None
+        assert result["revenue_yoy"].value > 0.5  # ~87% growth
+
+        assert "eps_diluted_yoy" in result
+        assert result["eps_diluted_yoy"].value is None
+        assert any("stock split contamination" in w for w in result["eps_diluted_yoy"].warnings)
+
+    def test_both_positive_no_flag(self):
+        """Normal growth: revenue +20%, EPS +15% -> no flag."""
+        ltm = {
+            "revenue": _cited(120),
+            "eps_diluted": _cited(2.30),
+        }
+        ltm1 = {
+            "revenue": _cited(100),
+            "eps_diluted": _cited(2.00),
+        }
+        result = compute_growth(ltm, ltm1)
+
+        assert result["eps_diluted_yoy"].value is not None
+        assert abs(result["eps_diluted_yoy"].value - 0.15) < 0.01
+
+    def test_both_negative_no_flag(self):
+        """Both declining: revenue -10%, EPS -25% -> no flag (not split-related)."""
+        ltm = {
+            "revenue": _cited(90),
+            "eps_diluted": _cited(1.50),
+        }
+        ltm1 = {
+            "revenue": _cited(100),
+            "eps_diluted": _cited(2.00),
+        }
+        result = compute_growth(ltm, ltm1)
+
+        assert result["eps_diluted_yoy"].value is not None
+        assert result["eps_diluted_yoy"].value < 0
+
+    def test_small_divergence_no_flag(self):
+        """Revenue +15%, EPS -10% -> within threshold, no flag."""
+        ltm = {
+            "revenue": _cited(115),
+            "eps_diluted": _cited(1.80),
+        }
+        ltm1 = {
+            "revenue": _cited(100),
+            "eps_diluted": _cited(2.00),
+        }
+        result = compute_growth(ltm, ltm1)
+
+        assert result["eps_diluted_yoy"].value is not None
+
+
 class TestMarginDeltas:
     def test_gross_margin_expansion(self):
         """Gross margin improves from 50% to 60% = +0.10 (1000bps)."""

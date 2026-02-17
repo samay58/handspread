@@ -78,6 +78,31 @@ def _safe_growth(
     )
 
 
+def _flag_split_divergence(result: dict[str, ComputedValue]) -> None:
+    """Replace EPS growth with None when it diverges from revenue in a way
+    consistent with stock split contamination (revenue up, EPS down)."""
+    rev_cv = result.get("revenue_yoy")
+    eps_cv = result.get("eps_diluted_yoy")
+    if rev_cv is None or eps_cv is None:
+        return
+    if rev_cv.value is None or eps_cv.value is None:
+        return
+    # Revenue strongly positive but EPS strongly negative -> split contamination
+    if rev_cv.value > 0.20 and eps_cv.value < -0.20:
+        result["eps_diluted_yoy"] = ComputedValue(
+            metric="eps_diluted_yoy",
+            value=None,
+            unit="pure",
+            formula=eps_cv.formula,
+            components=eps_cv.components,
+            warnings=[
+                f"Skipped: revenue growth ({rev_cv.value:+.1%}) strongly positive "
+                f"but EPS growth ({eps_cv.value:+.1%}) negative, suggesting stock "
+                f"split contamination in per-share data."
+            ],
+        )
+
+
 def _compute_margin(
     metrics: dict[str, Any],
     numerator_key: str,
@@ -141,6 +166,10 @@ def compute_growth(
         cv = _safe_growth(key, ltm_val, ltm1_val, ltm_src, ltm1_src)
         if cv is not None:
             result[f"{key}_yoy"] = cv
+
+    # Cross-window split detection: if revenue grew strongly but EPS declined,
+    # the per-share data likely mixes pre-split and post-split values.
+    _flag_split_divergence(result)
 
     # EBITDA margin delta (uses raw extraction)
     ltm_m, ltm_c = _compute_margin(ltm_metrics, "ebitda")

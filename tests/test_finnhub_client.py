@@ -248,6 +248,98 @@ class TestMarketCapFromProfile:
         assert snap.market_cap.value == expected_mcap
 
 
+class TestVendorMcapCurrencyCrossCheck:
+    """Vendor market cap should be rejected when profile currency is non-USD and value diverges."""
+
+    @pytest.mark.asyncio
+    async def test_non_usd_currency_high_ratio_falls_back(self):
+        """TSM-like: currency=TWD, vendor mcap is 5x computed -> fall back to computed."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 25900.0,  # 25.9B shares (ordinary)
+                "marketCapitalization": 49000000,  # 49T TWD in millions
+                "name": "TSM Corp",
+                "currency": "TWD",
+            },
+            quote={"c": 200.0, "t": 1700000000},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("TSM")
+
+        # Should fall back to computed (price * shares) because vendor is in TWD
+        assert isinstance(snap.market_cap, ComputedValue)
+        expected = 200.0 * 25_900_000_000
+        assert snap.market_cap.value == expected
+        # Warning should mention non-USD denomination on the market_cap ComputedValue
+        assert any("non-USD" in w for w in snap.market_cap.warnings)
+
+    @pytest.mark.asyncio
+    async def test_non_usd_currency_reasonable_ratio_uses_vendor(self):
+        """BABA-like: currency=CNY, but vendor mcap is reasonable in USD -> use vendor."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 2500.0,  # 2.5B shares
+                "marketCapitalization": 334000,  # $334B in millions
+                "name": "BABA Corp",
+                "currency": "CNY",
+            },
+            quote={"c": 130.0, "t": 1700000000},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("BABA")
+
+        # Vendor mcap = 334B, computed = 130 * 2.5B = 325B, ratio ~1.03 -> use vendor
+        assert isinstance(snap.market_cap, MarketValue)
+        assert snap.market_cap.value == 334_000_000_000
+
+    @pytest.mark.asyncio
+    async def test_usd_currency_any_ratio_uses_vendor(self):
+        """USD profile should always use vendor regardless of ratio."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 100.0,
+                "marketCapitalization": 500000,
+                "name": "USD Corp",
+                "currency": "USD",
+            },
+            quote={"c": 100.0, "t": 1700000000},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("TEST")
+
+        assert isinstance(snap.market_cap, MarketValue)
+        assert snap.market_cap.value == 500_000_000_000
+
+    @pytest.mark.asyncio
+    async def test_missing_currency_treated_as_usd(self):
+        """Profile without currency field should default to USD behavior."""
+        client = _mock_client(
+            profile={
+                "shareOutstanding": 100.0,
+                "marketCapitalization": 500000,
+                "name": "NoCurrency Corp",
+            },
+            quote={"c": 100.0, "t": 1700000000},
+        )
+        with (
+            patch("handspread.market.finnhub_client._get_client", return_value=client),
+            patch("handspread.market.finnhub_client.get_settings", return_value=_mock_settings()),
+        ):
+            snap = await fetch_market_snapshot("TEST")
+
+        assert isinstance(snap.market_cap, MarketValue)
+        assert snap.market_cap.value == 500_000_000_000
+
+
 class TestFetchSnapshotsPartialFailure:
     @pytest.mark.asyncio
     async def test_partial_failure(self):

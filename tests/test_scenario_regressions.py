@@ -538,3 +538,505 @@ async def test_bank_missing_gross_profit_tag():
     # Provenance should trace to components, not reported gross_profit
     gp_cv = jpm.operating["gross_margin"].components["gross_profit"]
     assert gp_cv.formula == "revenue - cost_of_revenue"
+
+
+# ---------------------------------------------------------------------------
+# Expanded Round 2 Scenario Cohorts (20-company basket)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_insurance_conglomerate_brk():
+    """BRK.B: massive float-as-liability, equity portfolio, no standard EBITDA."""
+    tickers = ["BRK.B"]
+    ltm = {
+        "BRK.B": _query_result(
+            "BRK.B",
+            _ltm_metrics(
+                revenue=_cited(365_000_000_000, "revenue", "USD"),
+                net_income=_cited(90_000_000_000, "net_income", "USD"),
+                ebitda=None,  # BRK doesn't report meaningful GAAP EBITDA
+                operating_income=None,
+                depreciation_amortization=None,
+                total_debt=_cited(120_000_000_000, "total_debt", "USD"),
+                cash=_cited(40_000_000_000, "cash", "USD"),
+                marketable_securities=_cited(300_000_000_000, "marketable_securities", "USD"),
+                stockholders_equity=_cited(550_000_000_000, "stockholders_equity", "USD"),
+                equity_method_investments=_cited(
+                    50_000_000_000, "equity_method_investments", "USD"
+                ),
+            ),
+        )
+    }
+    growth = {"BRK.B": _query_result("BRK.B", _growth_metrics(), period="ltm-1")}
+    market = {"BRK.B": _snapshot("BRK.B", price=500.0, shares=2_160_000_000)}
+
+    results = await _run_analysis(
+        tickers,
+        ltm,
+        growth,
+        market,
+        ev_policy=EVPolicy(subtract_equity_method_investments=True),
+    )
+    brk = results[0]
+    assert brk.errors == []
+    assert brk.ev_bridge.enterprise_value.value is not None
+    # EBITDA multiples should be None since EBITDA is missing
+    assert brk.multiples["ev_ebitda"].value is None
+    assert brk.multiples["pe"].value is not None
+
+
+@pytest.mark.asyncio
+async def test_reit_depreciation_heavy():
+    """PLD: REIT where depreciation distorts earnings. FFO is the real metric."""
+    tickers = ["PLD"]
+    ltm = {
+        "PLD": _query_result(
+            "PLD",
+            _ltm_metrics(
+                revenue=_cited(8_000_000_000, "revenue", "USD"),
+                net_income=_cited(2_000_000_000, "net_income", "USD"),
+                depreciation_amortization=_cited(3_500_000_000, "depreciation_amortization", "USD"),
+                operating_income=_cited(3_000_000_000, "operating_income", "USD"),
+                total_debt=_cited(30_000_000_000, "total_debt", "USD"),
+                stockholders_equity=_cited(35_000_000_000, "stockholders_equity", "USD"),
+                operating_lease_liabilities=_cited(
+                    500_000_000, "operating_lease_liabilities", "USD"
+                ),
+            ),
+        )
+    }
+    growth = {"PLD": _query_result("PLD", _growth_metrics(), period="ltm-1")}
+    market = {"PLD": _snapshot("PLD", price=120.0, shares=930_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    pld = results[0]
+    assert pld.errors == []
+    assert pld.ev_bridge.enterprise_value.value is not None
+    # D&A is larger than net income; PE misleadingly high
+    assert pld.multiples["pe"].value is not None
+    assert pld.multiples["ev_ebitda"].value is not None
+
+
+@pytest.mark.asyncio
+async def test_mlp_partnership():
+    """EPD: MLP with K-1 reporting, distributable cash flow."""
+    tickers = ["EPD"]
+    ltm = {
+        "EPD": _query_result(
+            "EPD",
+            _ltm_metrics(
+                revenue=_cited(50_000_000_000, "revenue", "USD"),
+                net_income=_cited(5_500_000_000, "net_income", "USD"),
+                operating_income=_cited(7_000_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(2_000_000_000, "depreciation_amortization", "USD"),
+                total_debt=_cited(28_000_000_000, "total_debt", "USD"),
+                cash=_cited(200_000_000, "cash", "USD"),
+                stockholders_equity=_cited(30_000_000_000, "stockholders_equity", "USD"),
+                dividends_per_share=_cited(2.10, "dividends_per_share", "USD/shares"),
+            ),
+        )
+    }
+    growth = {"EPD": _query_result("EPD", _growth_metrics(), period="ltm-1")}
+    market = {"EPD": _snapshot("EPD", price=30.0, shares=2_170_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    epd = results[0]
+    assert epd.errors == []
+    assert epd.ev_bridge.enterprise_value.value is not None
+    assert epd.multiples["ev_ebitda"].value is not None
+    assert epd.multiples["dividend_yield"].value is not None
+
+
+@pytest.mark.asyncio
+async def test_bdc_nav_based():
+    """ARCC: BDC where unrealized gains dominate earnings."""
+    tickers = ["ARCC"]
+    ltm = {
+        "ARCC": _query_result(
+            "ARCC",
+            _ltm_metrics(
+                revenue=_cited(3_000_000_000, "revenue", "USD"),
+                net_income=_cited(2_500_000_000, "net_income", "USD"),  # Includes unrealized gains
+                ebitda=None,
+                operating_income=None,
+                depreciation_amortization=None,
+                total_debt=_cited(12_000_000_000, "total_debt", "USD"),
+                cash=_cited(500_000_000, "cash", "USD"),
+                stockholders_equity=_cited(12_500_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    growth = {"ARCC": _query_result("ARCC", _growth_metrics(), period="ltm-1")}
+    market = {"ARCC": _snapshot("ARCC", price=22.0, shares=620_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    arcc = results[0]
+    assert arcc.errors == []
+    assert arcc.multiples["pe"].value is not None
+    assert arcc.multiples["price_book"].value is not None
+    # EBITDA multiple should be None (missing data)
+    assert arcc.multiples["ev_ebitda"].value is None
+
+
+@pytest.mark.asyncio
+async def test_dual_class_share_structure():
+    """GOOGL: three share classes complicate diluted share count."""
+    tickers = ["GOOGL"]
+    ltm = {
+        "GOOGL": _query_result(
+            "GOOGL",
+            _ltm_metrics(
+                revenue=_cited(340_000_000_000, "revenue", "USD"),
+                net_income=_cited(85_000_000_000, "net_income", "USD"),
+                eps_diluted=_cited(6.80, "eps_diluted", "USD/shares"),
+                operating_income=_cited(100_000_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(
+                    15_000_000_000, "depreciation_amortization", "USD"
+                ),
+                total_debt=_cited(30_000_000_000, "total_debt", "USD"),
+                cash=_cited(25_000_000_000, "cash", "USD"),
+                marketable_securities=_cited(80_000_000_000, "marketable_securities", "USD"),
+                stockholders_equity=_cited(290_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    growth = {"GOOGL": _query_result("GOOGL", _growth_metrics(), period="ltm-1")}
+    market = {"GOOGL": _snapshot("GOOGL", price=185.0, shares=12_300_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    googl = results[0]
+    assert googl.errors == []
+    assert googl.multiples["pe"].value is not None
+    assert googl.multiples["ev_revenue"].value is not None
+    assert googl.multiples["ev_ebitda"].value is not None
+
+
+@pytest.mark.asyncio
+async def test_recent_spinoff_limited_history():
+    """GEV: < 2 years independent history, carve-out accounting."""
+    tickers = ["GEV"]
+    ltm = {
+        "GEV": _query_result(
+            "GEV",
+            _ltm_metrics(
+                revenue=_cited(35_000_000_000, "revenue", "USD"),
+                net_income=_cited(4_000_000_000, "net_income", "USD"),
+                operating_income=_cited(5_000_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(1_200_000_000, "depreciation_amortization", "USD"),
+                total_debt=_cited(8_000_000_000, "total_debt", "USD"),
+                cash=_cited(5_000_000_000, "cash", "USD"),
+                stockholders_equity=_cited(15_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    # LTM-1 missing for spin-off (no comparable prior period)
+    growth = {
+        "GEV": _query_result(
+            "GEV",
+            {
+                "revenue": _cited(None, "revenue", "USD"),
+                "ebitda": _cited(None, "ebitda", "USD"),
+                "net_income": _cited(None, "net_income", "USD"),
+                "eps_diluted": _cited(None, "eps_diluted", "USD"),
+                "depreciation_amortization": _cited(None, "depreciation_amortization", "USD"),
+            },
+            period="ltm-1",
+        ),
+    }
+    market = {"GEV": _snapshot("GEV", price=400.0, shares=275_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    gev = results[0]
+    assert gev.errors == []
+    assert gev.ev_bridge.enterprise_value.value is not None
+    # Growth should be absent due to no prior year data
+    assert "revenue_yoy" not in gev.growth or gev.growth.get("revenue_yoy") is None
+
+
+@pytest.mark.asyncio
+async def test_shipping_cyclical_ebitda():
+    """ZIM: massive EBITDA swings, drydocking capex, vessel impairments."""
+    tickers = ["ZIM"]
+    ltm = {
+        "ZIM": _query_result(
+            "ZIM",
+            _ltm_metrics(
+                revenue=_cited(8_000_000_000, "revenue", "USD"),
+                net_income=_cited(2_500_000_000, "net_income", "USD"),
+                ebitda=_cited(4_000_000_000, "ebitda", "USD"),
+                operating_income=_cited(3_000_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(1_000_000_000, "depreciation_amortization", "USD"),
+                total_debt=_cited(5_000_000_000, "total_debt", "USD"),
+                cash=_cited(3_000_000_000, "cash", "USD"),
+                stockholders_equity=_cited(4_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    # Prior year had much lower EBITDA (cyclical)
+    growth_metrics = _growth_metrics()
+    growth_metrics["ebitda"] = _cited(1_500_000_000, "ebitda", "USD")
+    growth_metrics["net_income"] = _cited(500_000_000, "net_income", "USD")
+    growth = {"ZIM": _query_result("ZIM", growth_metrics, period="ltm-1")}
+    market = {"ZIM": _snapshot("ZIM", price=25.0, shares=120_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    zim = results[0]
+    assert zim.errors == []
+    assert zim.multiples["ev_ebitda"].value is not None
+    assert "ebitda_yoy" in zim.growth
+    # EBITDA growth should be very large (167%)
+    assert zim.growth["ebitda_yoy"].value > 1.0
+
+
+@pytest.mark.asyncio
+async def test_mining_commodity():
+    """FCX: commodity sensitivity, impairment risk."""
+    tickers = ["FCX"]
+    ltm = {
+        "FCX": _query_result(
+            "FCX",
+            _ltm_metrics(
+                revenue=_cited(24_000_000_000, "revenue", "USD"),
+                net_income=_cited(4_000_000_000, "net_income", "USD"),
+                operating_income=_cited(6_000_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(2_500_000_000, "depreciation_amortization", "USD"),
+                total_debt=_cited(10_000_000_000, "total_debt", "USD"),
+                cash=_cited(5_000_000_000, "cash", "USD"),
+                stockholders_equity=_cited(20_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    growth = {"FCX": _query_result("FCX", _growth_metrics(), period="ltm-1")}
+    market = {"FCX": _snapshot("FCX", price=45.0, shares=1_440_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    fcx = results[0]
+    assert fcx.errors == []
+    assert fcx.ev_bridge.enterprise_value.value is not None
+    assert fcx.multiples["ev_ebitda"].value is not None
+    assert fcx.multiples["pe"].value is not None
+
+
+@pytest.mark.asyncio
+async def test_bank_pair_jpm_wfc():
+    """JPM + WFC: interest income, provisions, bank-specific leverage."""
+    tickers = ["JPM", "WFC"]
+    ltm = {}
+    growth = {}
+    market = {}
+
+    for ticker, (price, shares, rev, ni) in {
+        "JPM": (220.0, 2_800_000_000, 175_000_000_000, 55_000_000_000),
+        "WFC": (65.0, 3_600_000_000, 82_000_000_000, 18_000_000_000),
+    }.items():
+        ltm[ticker] = _query_result(
+            ticker,
+            _ltm_metrics(
+                revenue=_cited(rev, "revenue", "USD"),
+                net_income=_cited(ni, "net_income", "USD"),
+                ebitda=None,  # Banks don't have meaningful EBITDA
+                operating_income=None,
+                depreciation_amortization=None,
+                total_debt=_cited(300_000_000_000, "total_debt", "USD"),
+                cash=_cited(500_000_000_000, "cash", "USD"),
+                stockholders_equity=_cited(320_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+        growth[ticker] = _query_result(ticker, _growth_metrics(), period="ltm-1")
+        market[ticker] = _snapshot(ticker, price=price, shares=shares)
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    for result in results:
+        assert result.errors == []
+        assert result.multiples["pe"].value is not None
+        assert result.multiples["price_book"].value is not None
+        # EBITDA-based multiples should be None for banks
+        assert result.multiples["ev_ebitda"].value is None
+
+
+@pytest.mark.asyncio
+async def test_brazilian_adr_pbr():
+    """PBR: BRL currency, commodity + FX double exposure."""
+    tickers = ["PBR"]
+    ltm = {"PBR": _query_result("PBR", _ltm_metrics(unit="BRL"))}
+    growth = {"PBR": _query_result("PBR", _growth_metrics(unit="BRL"), period="ltm-1")}
+    market = {"PBR": _snapshot("PBR", price=14.0, shares=6_300_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    pbr = results[0]
+    assert pbr.errors == []
+    # EV should be None due to BRL/USD currency mismatch
+    assert pbr.ev_bridge.enterprise_value.value is None
+    assert any("cannot mix currencies" in w for w in pbr.ev_bridge.enterprise_value.warnings)
+    # Operating ratios should still work (same-currency numerator/denominator)
+    assert "rd_pct_revenue" in pbr.operating
+
+
+@pytest.mark.asyncio
+async def test_japanese_adr_hmc():
+    """HMC: JPY currency, March FY end."""
+    tickers = ["HMC"]
+    ltm = {"HMC": _query_result("HMC", _ltm_metrics(unit="JPY"))}
+    growth = {"HMC": _query_result("HMC", _growth_metrics(unit="JPY"), period="ltm-1")}
+    market = {"HMC": _snapshot("HMC", price=35.0, shares=1_700_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    hmc = results[0]
+    assert hmc.errors == []
+    # EV should be None due to JPY/USD currency mismatch
+    assert hmc.ev_bridge.enterprise_value.value is None
+    assert any("cannot mix currencies" in w for w in hmc.ev_bridge.enterprise_value.warnings)
+
+
+@pytest.mark.asyncio
+async def test_pre_profit_ev_rivn():
+    """RIVN: deep losses, negative PE throughout."""
+    tickers = ["RIVN"]
+    ltm = {
+        "RIVN": _query_result(
+            "RIVN",
+            _ltm_metrics(
+                revenue=_cited(5_000_000_000, "revenue", "USD"),
+                net_income=_cited(-5_800_000_000, "net_income", "USD"),
+                operating_income=_cited(-5_000_000_000, "operating_income", "USD"),
+                free_cash_flow=_cited(-6_000_000_000, "free_cash_flow", "USD"),
+                stockholders_equity=_cited(8_000_000_000, "stockholders_equity", "USD"),
+                total_debt=_cited(5_000_000_000, "total_debt", "USD"),
+                cash=_cited(7_000_000_000, "cash", "USD"),
+            ),
+        )
+    }
+    growth = {"RIVN": _query_result("RIVN", _growth_metrics(), period="ltm-1")}
+    market = {"RIVN": _snapshot("RIVN", price=15.0, shares=1_000_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    rivn = results[0]
+    assert rivn.errors == []
+    assert rivn.multiples["pe"].value is not None
+    assert rivn.multiples["pe"].value < 0
+    assert any("Negative denominator" in w for w in rivn.multiples["pe"].warnings)
+    assert rivn.multiples["ev_revenue"].value is not None
+
+
+@pytest.mark.asyncio
+async def test_saas_high_sbc_ddog():
+    """DDOG: SBC-heavy SaaS, adjusted vs GAAP EBITDA gap."""
+    tickers = ["DDOG"]
+    ltm = {
+        "DDOG": _query_result(
+            "DDOG",
+            _ltm_metrics(
+                revenue=_cited(2_600_000_000, "revenue", "USD"),
+                net_income=_cited(300_000_000, "net_income", "USD"),
+                ebitda=_cited(300_000_000, "ebitda", "USD"),  # OI 200M + D&A 100M
+                operating_income=_cited(200_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(100_000_000, "depreciation_amortization", "USD"),
+                stock_based_compensation=_cited(600_000_000, "stock_based_compensation", "USD"),
+                total_debt=_cited(1_000_000_000, "total_debt", "USD"),
+                cash=_cited(2_500_000_000, "cash", "USD"),
+                stockholders_equity=_cited(3_000_000_000, "stockholders_equity", "USD"),
+                rd_expense=_cited(800_000_000, "rd_expense", "USD"),
+                sga_expense=_cited(600_000_000, "sga_expense", "USD"),
+            ),
+        )
+    }
+    growth = {"DDOG": _query_result("DDOG", _growth_metrics(), period="ltm-1")}
+    market = {"DDOG": _snapshot("DDOG", price=130.0, shares=330_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    ddog = results[0]
+    assert ddog.errors == []
+    assert ddog.multiples["ev_ebitda"].value is not None
+    # Adjusted EBITDA margin (34.6%) should be higher than GAAP EBITDA margin (11.5%)
+    has_both = "adjusted_ebitda_margin" in ddog.operating and "ebitda_margin" in ddog.operating
+    if has_both:
+        adj = ddog.operating["adjusted_ebitda_margin"].value
+        gaap = ddog.operating["ebitda_margin"].value
+        assert adj > gaap
+
+
+@pytest.mark.asyncio
+async def test_negative_equity_sbux():
+    """SBUX: negative equity from aggressive buybacks."""
+    tickers = ["SBUX"]
+    ltm = {
+        "SBUX": _query_result(
+            "SBUX",
+            _ltm_metrics(
+                revenue=_cited(36_000_000_000, "revenue", "USD"),
+                net_income=_cited(4_000_000_000, "net_income", "USD"),
+                stockholders_equity=_cited(-8_000_000_000, "stockholders_equity", "USD"),
+                total_debt=_cited(15_000_000_000, "total_debt", "USD"),
+            ),
+        )
+    }
+    growth = {"SBUX": _query_result("SBUX", _growth_metrics(), period="ltm-1")}
+    market = {"SBUX": _snapshot("SBUX", price=100.0, shares=1_100_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    sbux = results[0]
+    assert sbux.errors == []
+    assert sbux.multiples["price_book"].value < 0
+    assert any("Negative denominator" in w for w in sbux.multiples["price_book"].warnings)
+    # EV should still be computable
+    assert sbux.ev_bridge.enterprise_value.value is not None
+
+
+@pytest.mark.asyncio
+async def test_ford_captive_finance_low_debt():
+    """Ford: low resolved debt vs high liabilities. EV computed but debt is suspect."""
+    tickers = ["F"]
+    ltm = {
+        "F": _query_result(
+            "F",
+            _ltm_metrics(
+                revenue=_cited(175_000_000_000, "revenue", "USD"),
+                net_income=_cited(1_800_000_000, "net_income", "USD"),
+                total_debt=_cited(291_000_000, "total_debt", "USD"),  # Suspiciously low
+                cash=_cited(25_000_000_000, "cash", "USD"),
+                stockholders_equity=_cited(40_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    growth = {"F": _query_result("F", _growth_metrics(), period="ltm-1")}
+    market = {"F": _snapshot("F", price=12.0, shares=4_000_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    f_result = results[0]
+    assert f_result.errors == []
+    assert f_result.ev_bridge.enterprise_value.value is not None
+    # EV with only $291M debt - $25B cash = negative net debt
+    assert f_result.ev_bridge.net_debt.value < 0
+
+
+@pytest.mark.asyncio
+async def test_consumer_tech_aapl_large_buyback():
+    """AAPL: Sep FY, massive buybacks, huge operating leverage."""
+    tickers = ["AAPL"]
+    ltm = {
+        "AAPL": _query_result(
+            "AAPL",
+            _ltm_metrics(
+                revenue=_cited(390_000_000_000, "revenue", "USD"),
+                net_income=_cited(100_000_000_000, "net_income", "USD"),
+                operating_income=_cited(120_000_000_000, "operating_income", "USD"),
+                depreciation_amortization=_cited(
+                    11_000_000_000, "depreciation_amortization", "USD"
+                ),
+                total_debt=_cited(110_000_000_000, "total_debt", "USD"),
+                cash=_cited(30_000_000_000, "cash", "USD"),
+                marketable_securities=_cited(60_000_000_000, "marketable_securities", "USD"),
+                stockholders_equity=_cited(60_000_000_000, "stockholders_equity", "USD"),
+            ),
+        )
+    }
+    growth = {"AAPL": _query_result("AAPL", _growth_metrics(), period="ltm-1")}
+    market = {"AAPL": _snapshot("AAPL", price=230.0, shares=15_000_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    aapl = results[0]
+    assert aapl.errors == []
+    assert aapl.ev_bridge.enterprise_value.value is not None
+    assert aapl.multiples["pe"].value is not None
+    assert aapl.multiples["ev_ebitda"].value is not None

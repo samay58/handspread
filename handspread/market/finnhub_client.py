@@ -220,6 +220,33 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
         and isinstance(vendor_mcap_raw, (int, float))
         and vendor_mcap_raw > 0
     )
+
+    # Currency cross-check: some ADR profiles report marketCapitalization in the
+    # local currency (e.g. TWD for TSM) rather than USD.  When the profile says
+    # a non-USD currency AND the vendor value diverges from the price*shares
+    # estimate by more than 2x, fall back to the computed market cap.
+    mcap_warnings: list[str] = []
+    profile_currency = profile_data.get("currency", "USD")
+    non_usd_with_data = (
+        vendor_is_valid
+        and profile_currency != "USD"
+        and current_price is not None
+        and shares_value is not None
+    )
+    if non_usd_with_data:
+        computed_mcap_est = current_price * shares_value
+        if computed_mcap_est > 0:
+            vendor_mcap_usd = vendor_mcap_raw * 1_000_000
+            ratio = vendor_mcap_usd / computed_mcap_est
+            if ratio > 2.0 or ratio < 0.5:
+                vendor_is_valid = False
+                mcap_warnings.append(
+                    f"Vendor marketCapitalization ({vendor_mcap_raw}M) differs from "
+                    f"price*shares estimate by {ratio:.1f}x with non-USD profile "
+                    f"currency ({profile_currency}); likely non-USD denomination. "
+                    f"Falling back to computed market cap."
+                )
+
     if vendor_is_valid:
         # Finnhub returns marketCapitalization in millions (same as shareOutstanding)
         mcap_value = vendor_mcap_raw * 1_000_000
@@ -249,6 +276,7 @@ async def fetch_market_snapshot(symbol: str) -> MarketSnapshot:
             unit="USD",
             formula="price * shares_outstanding",
             components={"price": price_mv, "shares_outstanding": shares_mv},
+            warnings=mcap_warnings,
         )
 
     company_name = profile_data.get("name", symbol)
