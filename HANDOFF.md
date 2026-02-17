@@ -37,11 +37,11 @@ Handspread is in a clean, testable state for core analysis flows:
 
 ## Design Decisions To Preserve
 
-- Keep provenance explicit in the data model. This is the main differentiator of the project.
-- Keep errors isolated per ticker. Losing one company should not kill the run.
-- Keep EV policy configurable and visible in call sites. This prevents hidden analyst-assumption drift.
-- Keep market fallback assumptions paired with warnings. Silent unit guesses are hard to debug later.
-- Keep currency boundaries fail-closed for mixed market/SEC arithmetic.
+- Provenance stays explicit in the data model. Main differentiator of the project.
+- Errors stay isolated per ticker. Losing one company should not kill the run.
+- EV policy stays configurable and visible in call sites. Prevents hidden analyst-assumption drift.
+- Market fallback assumptions stay paired with warnings. Silent unit guesses are hard to debug later.
+- Currency boundaries stay fail-closed for mixed market/SEC arithmetic.
 
 ## Verification
 

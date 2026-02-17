@@ -53,11 +53,15 @@ for r in results:
 
 ## Design Choices
 
-- We run three independent data streams in parallel. That keeps runs fast and keeps one slow upstream from blocking everything.
-- We isolate failures per ticker. A bad ticker should not break the whole comp set.
-- We model every value as `MarketValue`, `CitedValue`, or `ComputedValue`. This keeps audit trails explicit in code, not buried in comments.
-- We keep EV policy choices configurable. Different teams treat leases, debt splits, and non-operating assets differently, so we make those choices visible and repeatable.
-- We treat ambiguous market-unit edge cases conservatively and attach warnings. It is better to flag uncertainty than quietly publish a clean-looking bad number.
+Three independent data streams run in parallel so one slow upstream does not block everything.
+
+Failures are isolated per ticker. A bad ticker should not break the whole comp set.
+
+Every value is typed as `MarketValue`, `CitedValue`, or `ComputedValue`. Audit trails live in the data model, not in ad-hoc comments.
+
+EV policy choices are configurable. Different teams treat leases, debt splits, and non-operating assets differently, and those choices should be visible and repeatable.
+
+Ambiguous market-unit edge cases get conservative treatment with warnings attached. Better to flag uncertainty than quietly publish a clean-looking bad number.
 
 ## Robustness Contracts
 

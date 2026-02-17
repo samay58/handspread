@@ -12,13 +12,17 @@ Finnhub (market data)    -----/
 
 In code, this happens with `asyncio.gather(...)` inside `analyze_comps()`. Each stream can fail without taking down the whole run. If one company fails a stream, the result object keeps partial data and records the error.
 
-## Design Decisions and Why We Made Them
+## Design Decisions
 
-- We fetch SEC and market data concurrently. This is mostly I/O wait, so parallel calls cut wall-clock time for real comp sets.
-- We keep `return_exceptions=True` and convert failures into per-company errors. In practice, upstream APIs fail occasionally, and we still need usable output for the rest of the basket.
-- We use explicit value types for provenance. This makes it obvious which numbers are vendor inputs, SEC facts, or derived math.
-- We keep EV construction policy-driven. Analysts differ on leases, debt treatment, and non-operating investments, and we need to show those choices instead of hiding them.
-- We keep market-data fallbacks simple but annotated with warnings. Unit ambiguity happens on vendor endpoints; we document assumptions at the value level so bad inputs are visible.
+SEC and market data are fetched concurrently. The work is mostly I/O wait, so parallel calls cut wall-clock time for real comp sets.
+
+Failures are isolated per company. `return_exceptions=True` converts upstream failures into per-company errors. One bad ticker should not kill the whole run, and in practice upstream APIs do fail.
+
+Provenance uses explicit value types (`MarketValue`, `CitedValue`, `ComputedValue`) so it is obvious at the code level which numbers come from a vendor, which come from a filing, and which are derived math.
+
+EV construction is policy-driven. Analysts disagree on leases, debt treatment, and non-operating investments. The policy object makes those choices visible and repeatable instead of hiding them.
+
+Market-data fallbacks are narrow and warning-backed. Unit ambiguity happens on vendor endpoints. Better to flag uncertainty than quietly publish a clean-looking bad number.
 
 ## Robustness Contracts (2026-02-17)
 
