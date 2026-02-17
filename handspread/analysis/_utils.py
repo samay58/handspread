@@ -94,6 +94,142 @@ def cross_currency_warning(sec_currency: str, context: str) -> str:
     )
 
 
+def _cross_check(
+    computed: float | None,
+    reported: float | None,
+    metric_name: str,
+    tolerance: float = 0.01,
+) -> str | None:
+    """Compare computed value against reported/vendor value.
+
+    Returns a warning string if relative divergence exceeds tolerance.
+    Returns None if they agree or if either value is None.
+    """
+    if computed is None or reported is None or reported == 0:
+        return None
+    rel_diff = abs(computed - reported) / abs(reported)
+    if rel_diff > tolerance:
+        return (
+            f"{metric_name}: computed ({computed:,.0f}) differs from reported "
+            f"({reported:,.0f}) by {rel_diff:.1%}"
+        )
+    return None
+
+
+def compute_gross_profit(
+    sec_metrics: dict[str, Any],
+) -> tuple[float | None, Any | None, list[str]]:
+    """Compute gross profit = revenue - cost_of_revenue.
+
+    Returns (gross_profit_value, gross_profit_computed_value, warnings).
+    Falls back to reported gross_profit if components are missing.
+    """
+    from ..models import ComputedValue
+
+    rev_val, rev_src = extract_sec_value(sec_metrics, "revenue")
+    cogs_val, cogs_src = extract_sec_value(sec_metrics, "cost_of_revenue")
+
+    warnings: list[str] = []
+
+    if rev_val is not None and cogs_val is not None:
+        computed_val = rev_val - cogs_val
+
+        # Cross-check against reported gross_profit if available
+        reported_val, _ = extract_sec_value(sec_metrics, "gross_profit")
+        xcheck = _cross_check(computed_val, reported_val, "gross_profit")
+        if xcheck is not None:
+            warnings.append(xcheck)
+
+        components: dict[str, Any] = {}
+        if rev_src is not None:
+            components["revenue"] = rev_src
+        if cogs_src is not None:
+            components["cost_of_revenue"] = cogs_src
+
+        cv = ComputedValue(
+            metric="gross_profit",
+            value=computed_val,
+            unit="USD",
+            formula="revenue - cost_of_revenue",
+            components=components,
+            warnings=warnings,
+        )
+        return computed_val, cv, warnings
+
+    # Fallback: use reported gross_profit if components missing
+    gp_val, gp_src = extract_sec_value(sec_metrics, "gross_profit")
+    if gp_val is not None:
+        warnings.append("Using reported gross_profit (cost_of_revenue unavailable)")
+        cv = ComputedValue(
+            metric="gross_profit",
+            value=gp_val,
+            unit="USD",
+            formula="reported gross_profit (pass-through)",
+            components={"gross_profit": gp_src} if gp_src is not None else {},
+            warnings=warnings,
+        )
+        return gp_val, cv, warnings
+
+    return None, None, []
+
+
+def compute_free_cash_flow(
+    sec_metrics: dict[str, Any],
+) -> tuple[float | None, Any | None, list[str]]:
+    """Compute free cash flow = operating_cash_flow - capex.
+
+    Returns (fcf_value, fcf_computed_value, warnings).
+    Falls back to edgarpack's derived free_cash_flow if components are missing.
+    """
+    from ..models import ComputedValue
+
+    ocf_val, ocf_src = extract_sec_value(sec_metrics, "operating_cash_flow")
+    capex_val, capex_src = extract_sec_value(sec_metrics, "capex")
+
+    warnings: list[str] = []
+
+    if ocf_val is not None and capex_val is not None:
+        computed_val = ocf_val - capex_val
+
+        # Cross-check against edgarpack's derived free_cash_flow if available
+        reported_val, _ = extract_sec_value(sec_metrics, "free_cash_flow")
+        xcheck = _cross_check(computed_val, reported_val, "free_cash_flow")
+        if xcheck is not None:
+            warnings.append(xcheck)
+
+        components: dict[str, Any] = {}
+        if ocf_src is not None:
+            components["operating_cash_flow"] = ocf_src
+        if capex_src is not None:
+            components["capex"] = capex_src
+
+        cv = ComputedValue(
+            metric="free_cash_flow",
+            value=computed_val,
+            unit="USD",
+            formula="operating_cash_flow - capex",
+            components=components,
+            warnings=warnings,
+        )
+        return computed_val, cv, warnings
+
+    # Fallback: use edgarpack's derived free_cash_flow
+    fcf_val, fcf_src = extract_sec_value(sec_metrics, "free_cash_flow")
+    if fcf_val is not None:
+        warnings.append("Using derived free_cash_flow (OCF or capex unavailable)")
+        cv = ComputedValue(
+            metric="free_cash_flow",
+            value=fcf_val,
+            unit="USD",
+            formula="derived free_cash_flow (pass-through)",
+            components={"free_cash_flow": fcf_src} if fcf_src is not None else {},
+            warnings=warnings,
+        )
+        return fcf_val, cv, warnings
+
+    return None, None, []
+
+
 def compute_adjusted_ebitda(
     sec_metrics: dict[str, Any],
 ) -> tuple[float | None, Any | None, list[str]]:

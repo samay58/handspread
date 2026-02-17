@@ -7,6 +7,7 @@ from typing import Any
 from ..models import ComputedValue, EVBridge, MarketSnapshot
 from ._utils import (
     compute_adjusted_ebitda,
+    compute_free_cash_flow,
     cross_currency_warning,
     detect_sec_currency,
     extract_sec_value,
@@ -114,7 +115,6 @@ def compute_multiples(
             "revenue",
             "ebitda",
             "operating_income",
-            "free_cash_flow",
             "net_income",
             "stockholders_equity",
             "dividends_per_share",
@@ -125,6 +125,9 @@ def compute_multiples(
 
     # Adjusted EBITDA for the primary EV/EBITDA multiple
     adj_ebitda_val, adj_ebitda_cv, _ = compute_adjusted_ebitda(sec_metrics)
+
+    # Computed FCF from components (OCF - capex) with fallback
+    fcf_val, fcf_cv, _ = compute_free_cash_flow(sec_metrics)
     if adj_ebitda_cv is not None:
         result["adjusted_ebitda"] = adj_ebitda_cv
 
@@ -132,7 +135,6 @@ def compute_multiples(
         ("ev_revenue", "revenue", "enterprise_value / revenue"),
         ("ev_ebitda_gaap", "ebitda", "enterprise_value / ebitda"),
         ("ev_ebit", "operating_income", "enterprise_value / operating_income"),
-        ("ev_fcf", "free_cash_flow", "enterprise_value / free_cash_flow"),
     ]
     for metric_name, den_key, formula in ev_defs:
         den_val, den_src = sec_values[den_key]
@@ -152,6 +154,25 @@ def compute_multiples(
             formula,
             ev_bridge.enterprise_value,
             den_src,
+        )
+
+    # EV/FCF uses computed FCF (OCF - capex) with fallback
+    if has_market_currency_mismatch:
+        result["ev_fcf"] = _blocked_for_currency(
+            metric="ev_fcf",
+            formula="enterprise_value / free_cash_flow",
+            sec_currency=sec_currency,
+            num_source=ev_bridge.enterprise_value,
+            den_source=fcf_cv,
+        )
+    else:
+        result["ev_fcf"] = _safe_divide(
+            ev_val,
+            fcf_val,
+            "ev_fcf",
+            "enterprise_value / free_cash_flow",
+            ev_bridge.enterprise_value,
+            fcf_cv,
         )
 
     # EV/EBITDA (adjusted) uses adjusted EBITDA as denominator
@@ -197,13 +218,12 @@ def compute_multiples(
             den_src,
         )
 
-    fcf_val, fcf_src = sec_values["free_cash_flow"]
     if has_market_currency_mismatch:
         result["fcf_yield"] = _blocked_for_currency(
             metric="fcf_yield",
             formula="free_cash_flow / market_cap",
             sec_currency=sec_currency,
-            num_source=fcf_src,
+            num_source=fcf_cv,
             den_source=market.market_cap,
             unit="pure",
         )
@@ -213,7 +233,7 @@ def compute_multiples(
             mcap_val,
             "fcf_yield",
             "free_cash_flow / market_cap",
-            fcf_src,
+            fcf_cv,
             market.market_cap,
             unit="pure",
         )

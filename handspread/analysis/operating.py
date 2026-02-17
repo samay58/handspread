@@ -7,6 +7,8 @@ from typing import Any
 from ..models import ComputedValue, MarketSnapshot
 from ._utils import (
     compute_adjusted_ebitda,
+    compute_free_cash_flow,
+    compute_gross_profit,
     cross_currency_warning,
     extract_sec_value,
     infer_currency_from_source,
@@ -60,9 +62,19 @@ def compute_operating(
         result["capex_pct_revenue"] = cv
 
     # Margin ratios
-    cv = _pct_of_revenue(sec_metrics, "gross_profit", "gross_margin", rev_val, rev_src)
-    if cv is not None:
-        result["gross_margin"] = cv
+    # Gross margin: compute from components (revenue - COGS) when possible
+    if rev_val is not None and rev_val != 0:
+        gp_val, gp_cv, gp_warnings = compute_gross_profit(sec_metrics)
+        if gp_val is not None:
+            components: dict[str, Any] = {"gross_profit": gp_cv, "revenue": rev_src}
+            result["gross_margin"] = ComputedValue(
+                metric="gross_margin",
+                value=gp_val / rev_val,
+                unit="pure",
+                formula="gross_profit / revenue",
+                components=components,
+                warnings=list(gp_warnings),
+            )
 
     cv = _pct_of_revenue(sec_metrics, "ebitda", "ebitda_margin", rev_val, rev_src)
     if cv is not None:
@@ -72,9 +84,19 @@ def compute_operating(
     if cv is not None:
         result["net_margin"] = cv
 
-    cv = _pct_of_revenue(sec_metrics, "free_cash_flow", "fcf_margin", rev_val, rev_src)
-    if cv is not None:
-        result["fcf_margin"] = cv
+    # FCF margin: compute from components (OCF - capex) when possible
+    if rev_val is not None and rev_val != 0:
+        fcf_val, fcf_cv, fcf_warnings = compute_free_cash_flow(sec_metrics)
+        if fcf_val is not None:
+            components: dict[str, Any] = {"free_cash_flow": fcf_cv, "revenue": rev_src}
+            result["fcf_margin"] = ComputedValue(
+                metric="fcf_margin",
+                value=fcf_val / rev_val,
+                unit="pure",
+                formula="free_cash_flow / revenue",
+                components=components,
+                warnings=list(fcf_warnings),
+            )
 
     # Adjusted EBITDA margin (OI + D&A + SBC) / revenue
     if rev_val is not None and rev_val != 0:

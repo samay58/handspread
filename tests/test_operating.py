@@ -216,3 +216,57 @@ class TestMargins:
         }
         result = compute_operating(sec)
         assert "adjusted_ebitda_margin" not in result
+
+
+class TestComputedGrossMargin:
+    def test_gross_margin_from_components(self):
+        """gross_margin uses computed gross profit (revenue - COGS)."""
+        sec = {
+            "revenue": _cited(1_000_000),
+            "cost_of_revenue": _cited(400_000),
+        }
+        result = compute_operating(sec)
+        assert abs(result["gross_margin"].value - 0.6) < 0.001
+        # Provenance: gross_profit component should be a ComputedValue
+        gp_component = result["gross_margin"].components["gross_profit"]
+        assert gp_component.formula == "revenue - cost_of_revenue"
+        assert "revenue" in gp_component.components
+        assert "cost_of_revenue" in gp_component.components
+
+    def test_gross_margin_falls_back_to_reported(self):
+        """Missing COGS falls back to reported gross_profit for gross_margin."""
+        sec = {
+            "revenue": _cited(1_000_000),
+            "gross_profit": _cited(600_000),
+        }
+        result = compute_operating(sec)
+        assert abs(result["gross_margin"].value - 0.6) < 0.001
+        gp_component = result["gross_margin"].components["gross_profit"]
+        assert "pass-through" in gp_component.formula
+
+
+class TestComputedFCFMargin:
+    def test_fcf_margin_from_components(self):
+        """fcf_margin uses computed FCF (OCF - capex)."""
+        sec = {
+            "revenue": _cited(1_000_000),
+            "operating_cash_flow": _cited(300_000),
+            "capex": _cited(100_000),
+        }
+        result = compute_operating(sec)
+        assert abs(result["fcf_margin"].value - 0.2) < 0.001
+        fcf_component = result["fcf_margin"].components["free_cash_flow"]
+        assert fcf_component.formula == "operating_cash_flow - capex"
+        assert "operating_cash_flow" in fcf_component.components
+        assert "capex" in fcf_component.components
+
+    def test_fcf_margin_falls_back_to_derived(self):
+        """Missing OCF/capex falls back to reported FCF for fcf_margin."""
+        sec = {
+            "revenue": _cited(1_000_000),
+            "free_cash_flow": _cited(200_000),
+        }
+        result = compute_operating(sec)
+        assert abs(result["fcf_margin"].value - 0.2) < 0.001
+        fcf_component = result["fcf_margin"].components["free_cash_flow"]
+        assert "pass-through" in fcf_component.formula

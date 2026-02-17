@@ -40,7 +40,7 @@ Three concurrent streams feed `handspread/engine.py`:
 
 ### Analysis Modules
 
-- `handspread/analysis/_utils.py`: shared helpers: SEC value extraction, currency detection, adjusted EBITDA
+- `handspread/analysis/_utils.py`: shared helpers: SEC value extraction, currency detection, component-based computation (gross profit, FCF, adjusted EBITDA) with cross-check against reported values
 - `handspread/analysis/enterprise_value.py`: EV bridge construction and policy handling
 - `handspread/analysis/multiples.py`: EV and equity multiples plus yields
 - `handspread/analysis/growth.py`: YoY growth rates and margin deltas (decimal change, not percentage of margin). Skips metrics with stock split contamination warnings from edgarpack

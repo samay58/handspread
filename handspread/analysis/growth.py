@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..models import ComputedValue
-from ._utils import compute_adjusted_ebitda, extract_sec_value
+from ._utils import compute_adjusted_ebitda, compute_gross_profit, extract_sec_value
 
 GROWTH_KEYS = ["revenue", "ebitda", "net_income", "eps_diluted", "depreciation_amortization"]
 
@@ -142,21 +142,43 @@ def compute_growth(
         if cv is not None:
             result[f"{key}_yoy"] = cv
 
-    # Margin deltas: gross and EBITDA
-    for num_key, margin_name in [
-        ("gross_profit", "gross_margin"),
-        ("ebitda", "ebitda_margin"),
-    ]:
-        ltm_m, ltm_c = _compute_margin(ltm_metrics, num_key)
-        ltm1_m, ltm1_c = _compute_margin(ltm1_metrics, num_key)
-        cv = _margin_delta(margin_name, ltm_m, ltm1_m, ltm_c, ltm1_c)
-        if cv is not None:
-            result[f"{margin_name}_chg"] = cv
+    # EBITDA margin delta (uses raw extraction)
+    ltm_m, ltm_c = _compute_margin(ltm_metrics, "ebitda")
+    ltm1_m, ltm1_c = _compute_margin(ltm1_metrics, "ebitda")
+    cv = _margin_delta("ebitda_margin", ltm_m, ltm1_m, ltm_c, ltm1_c)
+    if cv is not None:
+        result["ebitda_margin_chg"] = cv
 
-    # Adjusted EBITDA margin delta
+    # Gross margin delta: compute from components (revenue - COGS) when possible
     ltm_rev_val, ltm_rev_src = extract_sec_value(ltm_metrics, "revenue")
     ltm1_rev_val, ltm1_rev_src = extract_sec_value(ltm1_metrics, "revenue")
 
+    ltm_gp_val, ltm_gp_cv, _ = compute_gross_profit(ltm_metrics)
+    ltm1_gp_val, ltm1_gp_cv, _ = compute_gross_profit(ltm1_metrics)
+
+    ltm_gm = None
+    ltm_gm_components: dict[str, Any] = {}
+    if ltm_gp_val is not None and ltm_rev_val and ltm_rev_val != 0:
+        ltm_gm = ltm_gp_val / ltm_rev_val
+        ltm_gm_components = {"gross_profit": ltm_gp_cv, "revenue": ltm_rev_src}
+
+    ltm1_gm = None
+    ltm1_gm_components: dict[str, Any] = {}
+    if ltm1_gp_val is not None and ltm1_rev_val and ltm1_rev_val != 0:
+        ltm1_gm = ltm1_gp_val / ltm1_rev_val
+        ltm1_gm_components = {"gross_profit": ltm1_gp_cv, "revenue": ltm1_rev_src}
+
+    cv = _margin_delta(
+        "gross_margin",
+        ltm_gm,
+        ltm1_gm,
+        ltm_gm_components,
+        ltm1_gm_components,
+    )
+    if cv is not None:
+        result["gross_margin_chg"] = cv
+
+    # Adjusted EBITDA margin delta (reuses ltm_rev_val/ltm1_rev_val from above)
     ltm_adj_val, ltm_adj_cv, _ = compute_adjusted_ebitda(ltm_metrics)
     ltm1_adj_val, ltm1_adj_cv, _ = compute_adjusted_ebitda(ltm1_metrics)
 

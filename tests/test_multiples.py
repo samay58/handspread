@@ -258,6 +258,45 @@ class TestNoneEVProducesNoneMultiples:
         assert any("Numerator unavailable" in w for w in result["ev_revenue"].warnings)
 
 
+class TestComputedFCFMultiples:
+    def test_ev_fcf_uses_computed_fcf(self):
+        """EV/FCF uses computed FCF (OCF - capex) as denominator."""
+        bridge = _make_ev_bridge(10_000_000_000)
+        market = _make_snapshot()
+        sec = {
+            "operating_cash_flow": _cited(2_000_000_000),
+            "capex": _cited(500_000_000),
+        }
+        result = compute_multiples(bridge, market, sec)
+        # FCF = 2B - 0.5B = 1.5B, EV/FCF = 10B / 1.5B = 6.67x
+        assert abs(result["ev_fcf"].value - (10_000_000_000 / 1_500_000_000)) < 0.01
+        # Denominator should trace to computed FCF
+        den = result["ev_fcf"].components["denominator"]
+        assert den.formula == "operating_cash_flow - capex"
+
+    def test_fcf_yield_uses_computed_fcf(self):
+        """FCF yield uses computed FCF (OCF - capex) as numerator."""
+        bridge = _make_ev_bridge(10_000_000_000)
+        market = _make_snapshot(price=100.0, shares=1_000_000)  # mcap = 100M
+        sec = {
+            "operating_cash_flow": _cited(20_000_000),
+            "capex": _cited(10_000_000),
+        }
+        result = compute_multiples(bridge, market, sec)
+        # FCF = 20M - 10M = 10M, yield = 10M / 100M = 0.1
+        assert abs(result["fcf_yield"].value - 0.1) < 0.001
+        num = result["fcf_yield"].components["numerator"]
+        assert num.formula == "operating_cash_flow - capex"
+
+    def test_ev_fcf_falls_back_to_derived(self):
+        """Missing OCF/capex falls back to edgarpack's derived FCF."""
+        bridge = _make_ev_bridge(10_000_000_000)
+        market = _make_snapshot()
+        sec = {"free_cash_flow": _cited(2_000_000_000)}
+        result = compute_multiples(bridge, market, sec)
+        assert abs(result["ev_fcf"].value - 5.0) < 0.001
+
+
 class TestCurrencyMismatch:
     def test_non_usd_sec_data_blocks_market_cross_metrics(self):
         bridge = _make_ev_bridge(10_000_000_000)

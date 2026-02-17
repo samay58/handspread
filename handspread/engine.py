@@ -49,6 +49,7 @@ REQUIRED_METRICS = [
 # Metrics needed for growth (annual series) and margin deltas
 GROWTH_METRICS = [
     "revenue",
+    "cost_of_revenue",
     "ebitda",
     "net_income",
     "eps_diluted",

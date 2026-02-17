@@ -231,3 +231,51 @@ class TestMarginDeltas:
         assert "prior" in cv.components
         assert "gross_profit" in cv.components["current"]
         assert "revenue" in cv.components["current"]
+
+
+class TestComputedGrossMarginDelta:
+    def test_gross_margin_chg_from_components(self):
+        """gross_margin_chg uses computed gross profit for both periods."""
+        ltm = {
+            "revenue": _cited(200),
+            "cost_of_revenue": _cited(80),  # GP = 120, margin = 60%
+        }
+        ltm1 = {
+            "revenue": _cited(200),
+            "cost_of_revenue": _cited(100),  # GP = 100, margin = 50%
+        }
+        result = compute_growth(ltm, ltm1)
+
+        assert "gross_margin_chg" in result
+        assert abs(result["gross_margin_chg"].value - 0.10) < 0.001
+
+        # Verify provenance traces to revenue + cost_of_revenue
+        current = result["gross_margin_chg"].components["current"]
+        gp_cv = current["gross_profit"]
+        assert gp_cv.formula == "revenue - cost_of_revenue"
+        assert "revenue" in gp_cv.components
+        assert "cost_of_revenue" in gp_cv.components
+
+    def test_gross_margin_chg_falls_back_to_reported(self):
+        """When COGS missing, gross_margin_chg falls back to reported gross_profit."""
+        ltm = {"revenue": _cited(200), "gross_profit": _cited(120)}
+        ltm1 = {"revenue": _cited(200), "gross_profit": _cited(100)}
+        result = compute_growth(ltm, ltm1)
+
+        assert "gross_margin_chg" in result
+        assert abs(result["gross_margin_chg"].value - 0.10) < 0.001
+
+    def test_gross_margin_chg_mixed_availability(self):
+        """LTM has COGS, LTM-1 only has reported gross_profit. Both periods resolve."""
+        ltm = {
+            "revenue": _cited(200),
+            "cost_of_revenue": _cited(80),  # GP = 120, margin = 60%
+        }
+        ltm1 = {
+            "revenue": _cited(200),
+            "gross_profit": _cited(100),  # margin = 50%
+        }
+        result = compute_growth(ltm, ltm1)
+
+        assert "gross_margin_chg" in result
+        assert abs(result["gross_margin_chg"].value - 0.10) < 0.001

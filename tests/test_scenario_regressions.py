@@ -64,11 +64,13 @@ def _query_result(symbol: str, metrics: dict, period: str = "ltm") -> QueryResul
 def _ltm_metrics(unit: str = "USD", **overrides):
     base = {
         "revenue": _cited(20_000_000_000, "revenue", unit),
+        "cost_of_revenue": _cited(6_000_000_000, "cost_of_revenue", unit),
         "gross_profit": _cited(14_000_000_000, "gross_profit", unit),
         "ebitda": _cited(6_000_000_000, "ebitda", unit),
         "operating_income": _cited(5_000_000_000, "operating_income", unit),
         "depreciation_amortization": _cited(1_000_000_000, "depreciation_amortization", unit),
         "stock_based_compensation": _cited(500_000_000, "stock_based_compensation", unit),
+        "operating_cash_flow": _cited(5_500_000_000, "operating_cash_flow", unit),
         "free_cash_flow": _cited(4_000_000_000, "free_cash_flow", unit),
         "net_income": _cited(3_000_000_000, "net_income", unit),
         "stockholders_equity": _cited(15_000_000_000, "stockholders_equity", unit),
@@ -94,6 +96,7 @@ def _growth_metrics(unit: str = "USD"):
     """LTM-1 values: single CitedValue per metric (prior year trailing twelve months)."""
     return {
         "revenue": _cited(18_000_000_000, "revenue", unit),
+        "cost_of_revenue": _cited(6_000_000_000, "cost_of_revenue", unit),
         "ebitda": _cited(5_000_000_000, "ebitda", unit),
         "net_income": _cited(2_500_000_000, "net_income", unit),
         "eps_diluted": _cited(2.0, "eps_diluted", unit),
@@ -506,3 +509,32 @@ async def test_annual_only_filer_growth():
     # Revenue grew from $70B to $90B = ~28.6% growth
     assert tsm.growth["revenue_yoy"].value is not None
     assert abs(tsm.growth["revenue_yoy"].value - (90 - 70) / 70) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_bank_missing_gross_profit_tag():
+    """Bank/financial where GrossProfit XBRL tag is missing but revenue and COGS are present."""
+    tickers = ["JPM"]
+    ltm = {
+        "JPM": _query_result(
+            "JPM",
+            _ltm_metrics(
+                gross_profit=None,  # GrossProfit tag omitted by filer
+                cost_of_revenue=_cited(6_000_000_000, "cost_of_revenue", "USD"),
+            ),
+        )
+    }
+    growth = {"JPM": _query_result("JPM", _growth_metrics(), period="ltm-1")}
+    market = {"JPM": _snapshot("JPM", price=180.0, shares=2_800_000_000)}
+
+    results = await _run_analysis(tickers, ltm, growth, market)
+    jpm = results[0]
+
+    # gross_margin should still compute from revenue - cost_of_revenue
+    assert "gross_margin" in jpm.operating
+    expected_gm = (20_000_000_000 - 6_000_000_000) / 20_000_000_000
+    assert abs(jpm.operating["gross_margin"].value - expected_gm) < 0.001
+
+    # Provenance should trace to components, not reported gross_profit
+    gp_cv = jpm.operating["gross_margin"].components["gross_profit"]
+    assert gp_cv.formula == "revenue - cost_of_revenue"
